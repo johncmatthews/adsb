@@ -12,6 +12,7 @@ public sealed class AppOptions
     public uint AsyncBufferCount { get; private init; } = 16;
     public uint AsyncBufferSize { get; private init; } = 262_144;
     public string? DriverPath { get; private init; }
+    public string? RegistryPath { get; private init; }
     public bool IncludeInvalidFrames { get; private init; }
     public bool IncludeNonAdsbFrames { get; private init; }
     public bool ShowRawFrames { get; private init; }
@@ -61,6 +62,9 @@ public sealed class AppOptions
                 case "--driver":
                     options = withDriver(RequireValue(args, ref i, arg));
                     break;
+                case "--registry":
+                    options = withRegistry(RequireValue(args, ref i, arg));
+                    break;
                 case "--include-invalid":
                     options = withIncludeInvalid();
                     break;
@@ -94,6 +98,7 @@ public sealed class AppOptions
         AppOptions withBufferCount(uint value) => Copy(bufferCount: value);
         AppOptions withBufferSize(uint value) => Copy(bufferSize: value);
         AppOptions withDriver(string value) => Copy(driverPath: value);
+        AppOptions withRegistry(string value) => Copy(registryPath: value);
         AppOptions withIncludeInvalid() => Copy(includeInvalid: true);
         AppOptions withIncludeNonAdsb() => Copy(includeNonAdsb: true);
         AppOptions withRaw() => Copy(showRaw: true);
@@ -109,6 +114,7 @@ public sealed class AppOptions
             uint? bufferCount = null,
             uint? bufferSize = null,
             string? driverPath = null,
+            string? registryPath = null,
             bool? includeInvalid = null,
             bool? includeNonAdsb = null,
             bool? showRaw = null,
@@ -126,6 +132,7 @@ public sealed class AppOptions
                 AsyncBufferCount = bufferCount ?? options.AsyncBufferCount,
                 AsyncBufferSize = bufferSize ?? options.AsyncBufferSize,
                 DriverPath = driverPath ?? options.DriverPath,
+                RegistryPath = registryPath ?? options.RegistryPath,
                 IncludeInvalidFrames = includeInvalid ?? options.IncludeInvalidFrames,
                 IncludeNonAdsbFrames = includeNonAdsb ?? options.IncludeNonAdsbFrames,
                 ShowRawFrames = showRaw ?? options.ShowRawFrames,
@@ -151,6 +158,7 @@ public sealed class AppOptions
         writer.WriteLine("  --gain <auto|max|db>       Tuner gain (default: max)");
         writer.WriteLine("  --ppm <value>              Frequency correction in PPM");
         writer.WriteLine("  --driver <path>            Explicit path to librtlsdr");
+        writer.WriteLine("  --registry <csv>           Optional ICAO-to-tail CSV registry");
         writer.WriteLine("  --receiver-lat <degrees>   Receiver latitude for local CPR fallback");
         writer.WriteLine("  --receiver-lon <degrees>   Receiver longitude for local CPR fallback");
         writer.WriteLine("  --raw                      Include raw Mode S frame hex in output");
@@ -194,6 +202,11 @@ public sealed class AppOptions
         if (ReceiverLatitude.HasValue != ReceiverLongitude.HasValue)
         {
             throw new ArgumentException("Pass both --receiver-lat and --receiver-lon, or neither.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(RegistryPath) && !File.Exists(RegistryPath))
+        {
+            throw new ArgumentException($"--registry file does not exist: {RegistryPath}");
         }
     }
 

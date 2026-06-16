@@ -44,6 +44,8 @@ public sealed record VelocityReport(
 public sealed record AircraftSnapshot(
     string Icao,
     string? Callsign,
+    string? TailNumber,
+    string? FlightNumber,
     int? AltitudeFeet,
     int? GnssHeightMeters,
     double? Latitude,

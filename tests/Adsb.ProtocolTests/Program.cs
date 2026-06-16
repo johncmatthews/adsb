@@ -1,4 +1,5 @@
 using Adsb.Decoding;
+using Adsb.Formatting;
 
 var tests = new ProtocolTests();
 tests.CrcAcceptsKnownGoodFrame();
@@ -7,6 +8,9 @@ tests.DecodesAircraftIdentification();
 tests.DecodesAirbornePositionAndAltitude();
 tests.DecodesGlobalCprPosition();
 tests.DecodesGroundSpeedVelocity();
+tests.DerivesUnitedStatesTailNumberFromIcao();
+tests.LoadsTailNumberFromRegistryCsv();
+tests.FormatsTailAndFlightIdentifiers();
 
 Console.WriteLine("Protocol tests passed.");
 
@@ -69,6 +73,51 @@ internal sealed class ProtocolTests
         AssertEqual("baro", message.Velocity?.VerticalRateSource, "velocity vertical source");
     }
 
+    public void DerivesUnitedStatesTailNumberFromIcao()
+    {
+        var resolver = AircraftIdentityResolver.Empty;
+        AssertEqual("N1", resolver.ResolveTailNumber("A00001"), "US N-number start");
+        AssertEqual("N999ZZ", resolver.ResolveTailNumber("ADF669"), "US N-number end");
+        AssertEqual("N456TS", resolver.ResolveTailNumber("A58A20"), "US N-number vanity");
+        AssertEqual("N97LM", resolver.ResolveTailNumber("AD8252"), "US N-number short suffix");
+    }
+
+    public void LoadsTailNumberFromRegistryCsv()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"adsb-registry-{Guid.NewGuid():N}.csv");
+        try
+        {
+            File.WriteAllText(path, "icao24,r\n4840d6,PH-BQP\n");
+            var resolver = AircraftIdentityResolver.Load(path);
+            AssertEqual("PH-BQP", resolver.ResolveTailNumber("4840D6"), "CSV registration lookup");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    public void FormatsTailAndFlightIdentifiers()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"adsb-registry-{Guid.NewGuid():N}.csv");
+        try
+        {
+            File.WriteAllText(path, "icao24,r\n4840D6,PH-BQP\n");
+            var tracker = new AircraftStateTracker(identityResolver: AircraftIdentityResolver.Load(path));
+            var message = Decode("8D4840D6202CC371C32CE0576098");
+            var snapshot = tracker.Apply(message);
+            var formatted = ConsoleMessageFormatter.Format(message, snapshot, includeRaw: false);
+
+            AssertContains("tail=PH-BQP", formatted, "formatted tail");
+            AssertContains("flight=KLM1023", formatted, "formatted flight");
+            AssertDoesNotContain("callsign=KLM1023", formatted, "formatted redundant callsign");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static ModeSMessage Decode(string hex, DateTimeOffset? receivedAt = null)
     {
         var decoder = new ModeSDecoder();
@@ -91,6 +140,22 @@ internal sealed class ProtocolTests
         if (!actual.HasValue || Math.Abs(expected - actual.Value) > tolerance)
         {
             throw new InvalidOperationException($"{label}: expected {expected}, got {actual}");
+        }
+    }
+
+    private static void AssertContains(string expected, string actual, string label)
+    {
+        if (!actual.Contains(expected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{label}: expected '{actual}' to contain '{expected}'");
+        }
+    }
+
+    private static void AssertDoesNotContain(string unexpected, string actual, string label)
+    {
+        if (actual.Contains(unexpected, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"{label}: expected '{actual}' not to contain '{unexpected}'");
         }
     }
 }

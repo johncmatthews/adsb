@@ -5,11 +5,16 @@ public sealed class AircraftStateTracker
     private readonly Dictionary<string, MutableAircraftState> aircraft = new(StringComparer.OrdinalIgnoreCase);
     private readonly double? receiverLatitude;
     private readonly double? receiverLongitude;
+    private readonly AircraftIdentityResolver identityResolver;
 
-    public AircraftStateTracker(double? receiverLatitude = null, double? receiverLongitude = null)
+    public AircraftStateTracker(
+        double? receiverLatitude = null,
+        double? receiverLongitude = null,
+        AircraftIdentityResolver? identityResolver = null)
     {
         this.receiverLatitude = receiverLatitude;
         this.receiverLongitude = receiverLongitude;
+        this.identityResolver = identityResolver ?? AircraftIdentityResolver.Empty;
     }
 
     public AircraftSnapshot? Apply(ModeSMessage message)
@@ -74,9 +79,15 @@ public sealed class AircraftStateTracker
             }
         }
 
+        var identity = identityResolver.Resolve(message.Icao, state.Callsign);
+        state.TailNumber = identity.TailNumber;
+        state.FlightNumber = identity.FlightNumber;
+
         return new AircraftSnapshot(
             message.Icao,
             state.Callsign,
+            state.TailNumber,
+            state.FlightNumber,
             state.AltitudeFeet,
             state.GnssHeightMeters,
             state.Latitude,
@@ -203,6 +214,8 @@ public sealed class AircraftStateTracker
     private sealed class MutableAircraftState
     {
         public string? Callsign { get; set; }
+        public string? TailNumber { get; set; }
+        public string? FlightNumber { get; set; }
         public int? AltitudeFeet { get; set; }
         public int? GnssHeightMeters { get; set; }
         public double? Latitude { get; set; }

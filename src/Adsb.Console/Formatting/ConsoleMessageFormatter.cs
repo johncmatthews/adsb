@@ -30,14 +30,7 @@ public static class ConsoleMessageFormatter
             parts.Add($"CRC=bad:{message.CrcRemainder:X6}");
         }
 
-        if (!string.IsNullOrWhiteSpace(message.Callsign))
-        {
-            parts.Add($"callsign={message.Callsign}");
-        }
-        else if (!string.IsNullOrWhiteSpace(snapshot?.Callsign))
-        {
-            parts.Add($"callsign={snapshot.Callsign}");
-        }
+        AddIdentity(parts, message, snapshot);
 
         if (message.Category.HasValue)
         {
@@ -56,6 +49,30 @@ public static class ConsoleMessageFormatter
         }
 
         return string.Join(" ", parts);
+    }
+
+    private static void AddIdentity(List<string> parts, ModeSMessage message, AircraftSnapshot? snapshot)
+    {
+        var callsign = message.Callsign ?? snapshot?.Callsign;
+        var tailNumber = snapshot?.TailNumber;
+        var flightNumber = snapshot?.FlightNumber;
+
+        if (!string.IsNullOrWhiteSpace(tailNumber))
+        {
+            parts.Add($"tail={tailNumber}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(flightNumber))
+        {
+            parts.Add($"flight={flightNumber}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(callsign) &&
+            !callsign.Equals(tailNumber, StringComparison.OrdinalIgnoreCase) &&
+            !callsign.Equals(flightNumber, StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add($"callsign={callsign}");
+        }
     }
 
     private static void AddAltitude(List<string> parts, ModeSMessage message, AircraftSnapshot? snapshot)

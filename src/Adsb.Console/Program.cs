@@ -45,12 +45,16 @@ internal static class ProgramEntry
                 cancellation.Cancel();
             };
 
+            var identityResolver = AircraftIdentityResolver.Load(options.RegistryPath);
             using var device = RtlSdrDevice.Open(options);
             device.Configure();
 
             var demodulator = new AdsbDemodulator(options.SampleRate);
             var decoder = new ModeSDecoder();
-            var tracker = new AircraftStateTracker(options.ReceiverLatitude, options.ReceiverLongitude);
+            var tracker = new AircraftStateTracker(
+                options.ReceiverLatitude,
+                options.ReceiverLongitude,
+                identityResolver);
 
             Console.Error.WriteLine(
                 $"Listening on {options.FrequencyHz:N0} Hz at {options.SampleRate:N0} samples/s. Press Ctrl+C to stop.");
