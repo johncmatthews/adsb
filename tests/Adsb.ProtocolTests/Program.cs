@@ -1,5 +1,7 @@
 using Adsb.Decoding;
 using Adsb.Formatting;
+using Adsb.Tracking;
+using Microsoft.Data.Sqlite;
 
 var tests = new ProtocolTests();
 tests.CrcAcceptsKnownGoodFrame();
@@ -11,6 +13,8 @@ tests.DecodesGroundSpeedVelocity();
 tests.DerivesUnitedStatesTailNumberFromIcao();
 tests.LoadsTailNumberFromRegistryCsv();
 tests.FormatsTailAndFlightIdentifiers();
+tests.WatchlistMatchesJsonConfigByTailNumber();
+tests.RecordsMatchedTelemetryToSqlite();
 
 Console.WriteLine("Protocol tests passed.");
 
@@ -118,6 +122,90 @@ internal sealed class ProtocolTests
         }
     }
 
+    public void WatchlistMatchesJsonConfigByTailNumber()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var path = Path.Combine(directory, "watchlist.json");
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "aircraft": [
+                    { "label": "sample aircraft", "tail": "N456TS" }
+                  ]
+                }
+                """);
+
+            var watchlist = AircraftWatchlist.Load(path);
+            var matched = watchlist.TryMatch(
+                new AircraftIdentityTelemetry("A58A20", null, "N456TS", null),
+                out var match);
+
+            AssertEqual(true, matched, "watchlist tail match");
+            AssertEqual("sample aircraft", match.Label, "watchlist label");
+            AssertEqual("tail", match.IdentifierType, "watchlist identifier type");
+            AssertEqual("N456TS", match.IdentifierValue, "watchlist identifier value");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    public void RecordsMatchedTelemetryToSqlite()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var watchlistPath = Path.Combine(directory, "watchlist.json");
+            var databasePath = Path.Combine(directory, "telemetry.sqlite");
+            File.WriteAllText(
+                watchlistPath,
+                """
+                {
+                  "aircraft": [
+                    { "label": "KLM sample", "flight": "KLM1023" }
+                  ]
+                }
+                """);
+
+            var tracker = new AircraftStateTracker();
+            var message = Decode("8D4840D6202CC371C32CE0576098", DateTimeOffset.Parse("2026-06-16T12:34:56Z"));
+            var snapshot = tracker.Apply(message);
+
+            using (var recorder = WatchlistTelemetryRecorder.Open(watchlistPath, databasePath))
+            {
+                AssertEqual(true, recorder.TryRecord(message, snapshot), "telemetry recorded");
+            }
+
+            using var connection = new SqliteConnection($"Data Source={databasePath}");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT watchlist_label, matched_identifier_type, matched_identifier, icao, flight_number, raw_hex, type_code
+                FROM watchlist_telemetry
+                """;
+
+            using var reader = command.ExecuteReader();
+            AssertEqual(true, reader.Read(), "telemetry row exists");
+            AssertEqual("KLM sample", reader.GetString(0), "telemetry label");
+            AssertEqual("flight", reader.GetString(1), "telemetry match type");
+            AssertEqual("KLM1023", reader.GetString(2), "telemetry match value");
+            AssertEqual("4840D6", reader.GetString(3), "telemetry ICAO");
+            AssertEqual("KLM1023", reader.GetString(4), "telemetry flight number");
+            AssertEqual(message.RawHex, reader.GetString(5), "telemetry raw frame");
+            AssertEqual(4, reader.GetInt32(6), "telemetry type code");
+            AssertEqual(false, reader.Read(), "telemetry row count");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static ModeSMessage Decode(string hex, DateTimeOffset? receivedAt = null)
     {
         var decoder = new ModeSDecoder();
@@ -126,6 +214,13 @@ internal sealed class ProtocolTests
 
     private static DemodulatedFrame Frame(string hex, DateTimeOffset? receivedAt = null) =>
         new(Convert.FromHexString(hex), hex.Length * 4, SignalDb: 12.5, receivedAt ?? DateTimeOffset.UnixEpoch);
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"adsb-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
 
     private static void AssertEqual<T>(T expected, T actual, string label)
     {

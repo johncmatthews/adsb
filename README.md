@@ -33,6 +33,7 @@ dotnet run --project src/Adsb.Console -- --list-devices
 dotnet run --project src/Adsb.Console -- --device 0 --gain auto --ppm 1
 dotnet run --project src/Adsb.Console -- --receiver-lat 40.7128 --receiver-lon -74.0060 --raw
 dotnet run --project src/Adsb.Console -- --registry aircraft.csv
+dotnet run --project src/Adsb.Console -- --watchlist watchlist.json --telemetry-db watchlist.sqlite
 ```
 
 The MVP demodulator expects `--sample-rate 2000000`, tunes to `1090MHz` by default, validates ADS-B CRC, decodes common aircraft identification, airborne position, and airborne velocity messages, then prints one readable line per decoded frame.
@@ -46,6 +47,30 @@ icao24,r
 4840D6,PH-BQP
 400AA2,G-EZEJ
 ```
+
+## Watchlist Recording
+
+Pass `--watchlist <file>` to record matched aircraft telemetry to SQLite. The default database path is `adsb-watchlist.sqlite`; use `--telemetry-db <path>` to choose another file.
+
+Example watchlist:
+
+```json
+{
+  "aircraft": [
+    {
+      "label": "club aircraft",
+      "icao": "A58A20",
+      "tail": "N456TS"
+    },
+    {
+      "label": "KLM sample",
+      "flight": "KLM1023"
+    }
+  ]
+}
+```
+
+Each matching decoded message is written to the `watchlist_telemetry` table with UTC timestamp, matched watchlist identifier, ICAO, tail, flight number, callsign, position, altitude, speed, heading/track, vertical rate, raw frame, signal strength, and CRC status.
 
 Example output:
 

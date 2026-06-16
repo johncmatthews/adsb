@@ -13,6 +13,8 @@ public sealed class AppOptions
     public uint AsyncBufferSize { get; private init; } = 262_144;
     public string? DriverPath { get; private init; }
     public string? RegistryPath { get; private init; }
+    public string? WatchlistPath { get; private init; }
+    public string TelemetryDatabasePath { get; private init; } = "adsb-watchlist.sqlite";
     public bool IncludeInvalidFrames { get; private init; }
     public bool IncludeNonAdsbFrames { get; private init; }
     public bool ShowRawFrames { get; private init; }
@@ -65,6 +67,12 @@ public sealed class AppOptions
                 case "--registry":
                     options = withRegistry(RequireValue(args, ref i, arg));
                     break;
+                case "--watchlist":
+                    options = withWatchlist(RequireValue(args, ref i, arg));
+                    break;
+                case "--telemetry-db":
+                    options = withTelemetryDatabase(RequireValue(args, ref i, arg));
+                    break;
                 case "--include-invalid":
                     options = withIncludeInvalid();
                     break;
@@ -99,6 +107,8 @@ public sealed class AppOptions
         AppOptions withBufferSize(uint value) => Copy(bufferSize: value);
         AppOptions withDriver(string value) => Copy(driverPath: value);
         AppOptions withRegistry(string value) => Copy(registryPath: value);
+        AppOptions withWatchlist(string value) => Copy(watchlistPath: value);
+        AppOptions withTelemetryDatabase(string value) => Copy(telemetryDatabasePath: value);
         AppOptions withIncludeInvalid() => Copy(includeInvalid: true);
         AppOptions withIncludeNonAdsb() => Copy(includeNonAdsb: true);
         AppOptions withRaw() => Copy(showRaw: true);
@@ -115,6 +125,8 @@ public sealed class AppOptions
             uint? bufferSize = null,
             string? driverPath = null,
             string? registryPath = null,
+            string? watchlistPath = null,
+            string? telemetryDatabasePath = null,
             bool? includeInvalid = null,
             bool? includeNonAdsb = null,
             bool? showRaw = null,
@@ -133,6 +145,8 @@ public sealed class AppOptions
                 AsyncBufferSize = bufferSize ?? options.AsyncBufferSize,
                 DriverPath = driverPath ?? options.DriverPath,
                 RegistryPath = registryPath ?? options.RegistryPath,
+                WatchlistPath = watchlistPath ?? options.WatchlistPath,
+                TelemetryDatabasePath = telemetryDatabasePath ?? options.TelemetryDatabasePath,
                 IncludeInvalidFrames = includeInvalid ?? options.IncludeInvalidFrames,
                 IncludeNonAdsbFrames = includeNonAdsb ?? options.IncludeNonAdsbFrames,
                 ShowRawFrames = showRaw ?? options.ShowRawFrames,
@@ -159,6 +173,8 @@ public sealed class AppOptions
         writer.WriteLine("  --ppm <value>              Frequency correction in PPM");
         writer.WriteLine("  --driver <path>            Explicit path to librtlsdr");
         writer.WriteLine("  --registry <csv>           Optional ICAO-to-tail CSV registry");
+        writer.WriteLine("  --watchlist <file>         Aircraft watchlist config file");
+        writer.WriteLine("  --telemetry-db <path>      SQLite file for watchlist telemetry");
         writer.WriteLine("  --receiver-lat <degrees>   Receiver latitude for local CPR fallback");
         writer.WriteLine("  --receiver-lon <degrees>   Receiver longitude for local CPR fallback");
         writer.WriteLine("  --raw                      Include raw Mode S frame hex in output");
@@ -207,6 +223,20 @@ public sealed class AppOptions
         if (!string.IsNullOrWhiteSpace(RegistryPath) && !File.Exists(RegistryPath))
         {
             throw new ArgumentException($"--registry file does not exist: {RegistryPath}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(WatchlistPath) && !File.Exists(WatchlistPath))
+        {
+            throw new ArgumentException($"--watchlist file does not exist: {WatchlistPath}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(TelemetryDatabasePath))
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(TelemetryDatabasePath));
+            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+            {
+                throw new ArgumentException($"--telemetry-db directory does not exist: {directory}");
+            }
         }
     }
 
