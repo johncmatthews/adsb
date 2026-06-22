@@ -72,6 +72,65 @@ Example watchlist:
 
 Each matching decoded message is written to the `watchlist_telemetry` table with UTC timestamp, matched watchlist identifier, ICAO, tail, flight number, callsign, position, altitude, speed, heading/track, vertical rate, raw frame, signal strength, and CRC status.
 
+## Server
+
+The ASP.NET Core server exposes the decode pipeline to future clients over SignalR and REST.
+
+```sh
+dotnet run --project src/Adsb.Server --urls http://127.0.0.1:5087
+```
+
+Capture is disabled by default so the server can start without an RTL-SDR attached. Enable live capture with configuration:
+
+```sh
+dotnet run --project src/Adsb.Server -- \
+  --urls http://127.0.0.1:5087 \
+  --Adsb:Capture:Enabled true \
+  --Adsb:Identity:RegistryPath aircraft.csv \
+  --Adsb:Watchlist:Path watchlist.json \
+  --Adsb:Replay:DatabasePath watchlist.sqlite
+```
+
+SignalR:
+
+- Hub: `/hubs/adsb`
+- Server-to-client events: `aircraftUpdated`, `watchlistTelemetry`
+- Client-callable methods: `GetAircraftSnapshot`, `GetStatus`
+
+REST endpoints:
+
+- `GET /healthz`
+- `GET /api/status`
+- `GET /api/stats`
+- `GET /api/aircraft`
+- `GET /api/aircraft/{icao-or-tail-or-flight-or-callsign}`
+- `GET /api/watchlist`
+- `POST /api/watchlist`
+- `PUT /api/watchlist/{id}`
+- `DELETE /api/watchlist/{id}`
+- `GET /api/replay/sessions`
+- `GET /api/replay/events?icao=4840D6&limit=1000`
+
+Compatibility streams:
+
+- `GET /compat/jsonl`
+- `GET /compat/sbs`
+- `GET /compat/beast`
+
+Optional TCP compatibility outputs can be enabled with config values:
+
+```json
+{
+  "Adsb": {
+    "Compatibility": {
+      "SbsTcpPort": 30003,
+      "JsonLinesTcpPort": 31000,
+      "BeastTcpPort": 30005
+    }
+  }
+}
+```
+
 Example output:
 
 ```text

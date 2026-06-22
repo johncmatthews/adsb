@@ -1,14 +1,14 @@
 using Adsb.Decoding;
-using Microsoft.Data.Sqlite;
+using System.Data.SQLite;
 
 namespace Adsb.Tracking;
 
 public sealed class WatchlistTelemetryRecorder : IDisposable
 {
     private readonly AircraftWatchlist watchlist;
-    private readonly SqliteConnection? connection;
+    private readonly SQLiteConnection? connection;
 
-    private WatchlistTelemetryRecorder(AircraftWatchlist watchlist, SqliteConnection? connection, string? databasePath)
+    private WatchlistTelemetryRecorder(AircraftWatchlist watchlist, SQLiteConnection? connection, string? databasePath)
     {
         this.watchlist = watchlist;
         this.connection = connection;
@@ -34,11 +34,7 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-        {
-            DataSource = fullPath,
-            Mode = SqliteOpenMode.ReadWriteCreate
-        }.ToString());
+        var connection = new SQLiteConnection($"Data Source={fullPath};Version=3;");
 
         connection.Open();
         Initialize(connection);
@@ -72,7 +68,7 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         connection?.Dispose();
     }
 
-    private static void Initialize(SqliteConnection connection)
+    private static void Initialize(SQLiteConnection connection)
     {
         Execute(connection, "PRAGMA journal_mode = WAL;");
         Execute(connection, "PRAGMA synchronous = NORMAL;");
@@ -216,14 +212,14 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         command.ExecuteNonQuery();
     }
 
-    private static void Execute(SqliteConnection connection, string commandText)
+    private static void Execute(SQLiteConnection connection, string commandText)
     {
         using var command = connection.CreateCommand();
         command.CommandText = commandText;
         command.ExecuteNonQuery();
     }
 
-    private static void Add(SqliteCommand command, string name, object? value)
+    private static void Add(SQLiteCommand command, string name, object? value)
     {
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);
     }

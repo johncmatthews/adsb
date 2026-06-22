@@ -1,7 +1,11 @@
 using Adsb.Decoding;
 using Adsb.Formatting;
+using Adsb.Server.Compatibility;
+using Adsb.Server.Contracts;
+using Adsb.Server.Services;
 using Adsb.Tracking;
-using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Options;
+using System.Data.SQLite;
 
 var tests = new ProtocolTests();
 tests.CrcAcceptsKnownGoodFrame();
@@ -15,6 +19,10 @@ tests.LoadsTailNumberFromRegistryCsv();
 tests.FormatsTailAndFlightIdentifiers();
 tests.WatchlistMatchesJsonConfigByTailNumber();
 tests.RecordsMatchedTelemetryToSqlite();
+tests.ServerWatchlistCrudMatchesTelemetry();
+tests.ServerReplayStoreRecordsAndQueriesEvents();
+tests.ServerSnapshotStoreFindsAircraftByAnyIdentifier();
+tests.CompatibilityFormattersProduceOutput();
 
 Console.WriteLine("Protocol tests passed.");
 
@@ -180,7 +188,7 @@ internal sealed class ProtocolTests
                 AssertEqual(true, recorder.TryRecord(message, snapshot), "telemetry recorded");
             }
 
-            using var connection = new SqliteConnection($"Data Source={databasePath}");
+            using var connection = new SQLiteConnection($"Data Source={databasePath};Version=3;");
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText =
@@ -206,6 +214,108 @@ internal sealed class ProtocolTests
         }
     }
 
+    public void ServerWatchlistCrudMatchesTelemetry()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var store = CreateWatchlistStore(Path.Combine(directory, "server-watchlist.json"));
+            var added = store.Add(
+                new UpsertWatchlistAircraftRequest(
+                    "sample",
+                    Icaos: null,
+                    TailNumbers: ["N456TS"],
+                    FlightNumbers: null,
+                    Callsigns: null));
+
+            AssertEqual(1, store.GetAll().Count, "server watchlist add");
+            var matched = store.TryMatch(SampleTelemetry() with { TailNumber = "N456TS" }, out var match);
+            AssertEqual(true, matched, "server watchlist match");
+            AssertEqual(added.Id, match.WatchlistId, "server watchlist match id");
+            AssertEqual("tail", match.IdentifierType, "server watchlist match type");
+
+            var updated = store.TryUpdate(
+                added.Id,
+                new UpsertWatchlistAircraftRequest(
+                    "sample updated",
+                    Icaos: ["4840D6"],
+                    TailNumbers: null,
+                    FlightNumbers: null,
+                    Callsigns: null),
+                out var updatedItem);
+
+            AssertEqual(true, updated, "server watchlist update");
+            AssertEqual("sample updated", updatedItem.Label, "server watchlist updated label");
+            AssertEqual(true, store.Delete(added.Id), "server watchlist delete");
+            AssertEqual(0, store.GetAll().Count, "server watchlist delete count");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    public void ServerReplayStoreRecordsAndQueriesEvents()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var replay = CreateReplayStore(Path.Combine(directory, "server-replay.sqlite"));
+            var telemetry = SampleTelemetry();
+            replay.RecordAsync(
+                telemetry,
+                new WatchlistMatchDto("watch-1", "sample", "flight", "KLM1023"),
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            var sessions = replay.GetSessionsAsync(CancellationToken.None).GetAwaiter().GetResult();
+            AssertEqual(1, sessions.Count, "server replay session count");
+            AssertEqual("sample", sessions[0].WatchlistLabel, "server replay session label");
+            AssertEqual(1L, sessions[0].EventCount, "server replay session event count");
+
+            var events = replay.QueryEventsAsync(
+                new ReplayQuery(
+                    Icao: "4840D6",
+                    TailNumber: null,
+                    FlightNumber: null,
+                    Callsign: null,
+                    FromUtc: null,
+                    ToUtc: null,
+                    Limit: 10),
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            AssertEqual(1, events.Count, "server replay event count");
+            AssertEqual("KLM1023", events[0].FlightNumber, "server replay flight");
+            AssertEqual(telemetry.RawHex, events[0].RawHex, "server replay raw");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    public void ServerSnapshotStoreFindsAircraftByAnyIdentifier()
+    {
+        var store = new AircraftSnapshotStore();
+        var telemetry = SampleTelemetry();
+        store.Upsert(telemetry);
+
+        AssertEqual(true, store.TryGet("4840D6", out _), "snapshot by ICAO");
+        AssertEqual(true, store.TryGet("PH-BQP", out _), "snapshot by tail");
+        AssertEqual(true, store.TryGet("KLM1023", out _), "snapshot by flight");
+    }
+
+    public void CompatibilityFormattersProduceOutput()
+    {
+        var telemetry = SampleTelemetry();
+        var json = CompatibilityFormatters.ToJsonLine(telemetry);
+        var sbs = CompatibilityFormatters.ToSbsLine(telemetry);
+        var beast = CompatibilityFormatters.ToBeastFrame(telemetry);
+
+        AssertContains("\"icao\":\"4840D6\"", json, "compat jsonl");
+        AssertContains("MSG,3", sbs, "compat SBS");
+        AssertEqual((byte)0x1A, beast[0], "compat Beast prefix");
+    }
+
     private static ModeSMessage Decode(string hex, DateTimeOffset? receivedAt = null)
     {
         var decoder = new ModeSDecoder();
@@ -221,6 +331,37 @@ internal sealed class ProtocolTests
         Directory.CreateDirectory(path);
         return path;
     }
+
+    private static WatchlistConfigStore CreateWatchlistStore(string path) =>
+        new(Options.Create(new AdsbServerOptions { Watchlist = new WatchlistOptions { Path = path } }));
+
+    private static ReplayStore CreateReplayStore(string path) =>
+        new(Options.Create(new AdsbServerOptions { Replay = new ReplayOptions { DatabasePath = path } }));
+
+    private static AircraftTelemetryEvent SampleTelemetry() =>
+        new(
+            DateTimeOffset.Parse("2026-06-16T12:34:56Z"),
+            "4840D6",
+            "PH-BQP",
+            "KLM1023",
+            "KLM1023",
+            DownlinkFormat: 17,
+            TypeCode: 4,
+            Description: "Aircraft identification",
+            AltitudeFeet: 38_000,
+            GnssHeightMeters: null,
+            Latitude: 52.26578,
+            Longitude: 3.93891,
+            GroundSpeedKnots: 159,
+            TrackDegrees: 182.88,
+            VerticalRateFeetPerMinute: -832,
+            HeadingDegrees: null,
+            AirspeedKnots: null,
+            AirspeedType: null,
+            SignalDb: 12.5,
+            CrcOk: true,
+            CrcRemainder: "000000",
+            RawHex: "8D4840D6202CC371C32CE0576098");
 
     private static void AssertEqual<T>(T expected, T actual, string label)
     {

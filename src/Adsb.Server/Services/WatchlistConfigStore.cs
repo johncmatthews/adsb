@@ -1,0 +1,292 @@
+using System.Globalization;
+using System.Text.Json;
+using Adsb.Server.Contracts;
+using Microsoft.Extensions.Options;
+
+namespace Adsb.Server.Services;
+
+public sealed class WatchlistConfigStore
+{
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private readonly object gate = new();
+    private readonly string path;
+    private List<WatchlistAircraftDto>? entries;
+
+    public WatchlistConfigStore(IOptions<AdsbServerOptions> options)
+    {
+        path = System.IO.Path.GetFullPath(options.Value.Watchlist.Path);
+    }
+
+    public string Path => path;
+
+    public IReadOnlyList<WatchlistAircraftDto> GetAll()
+    {
+        lock (gate)
+        {
+            EnsureLoaded();
+            return entries!.ToArray();
+        }
+    }
+
+    public WatchlistAircraftDto Add(UpsertWatchlistAircraftRequest request)
+    {
+        lock (gate)
+        {
+            EnsureLoaded();
+            var item = Normalize(request, Guid.NewGuid().ToString("N"));
+            entries!.Add(item);
+            Save();
+            return item;
+        }
+    }
+
+    public bool TryUpdate(string id, UpsertWatchlistAircraftRequest request, out WatchlistAircraftDto item)
+    {
+        lock (gate)
+        {
+            EnsureLoaded();
+            var index = entries!.FindIndex(entry => entry.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                item = default!;
+                return false;
+            }
+
+            item = Normalize(request, entries[index].Id);
+            entries[index] = item;
+            Save();
+            return true;
+        }
+    }
+
+    public bool Delete(string id)
+    {
+        lock (gate)
+        {
+            EnsureLoaded();
+            var removed = entries!.RemoveAll(entry => entry.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) > 0;
+            if (removed)
+            {
+                Save();
+            }
+
+            return removed;
+        }
+    }
+
+    public bool TryMatch(AircraftTelemetryEvent telemetry, out WatchlistMatchDto match)
+    {
+        lock (gate)
+        {
+            EnsureLoaded();
+            foreach (var entry in entries!)
+            {
+                if (ContainsNormalized(entry.Icaos, telemetry.Icao, NormalizeIcao))
+                {
+                    match = new WatchlistMatchDto(entry.Id, entry.Label, "icao", telemetry.Icao);
+                    return true;
+                }
+
+                if (ContainsNormalized(entry.TailNumbers, telemetry.TailNumber, NormalizeIdentifier))
+                {
+                    match = new WatchlistMatchDto(entry.Id, entry.Label, "tail", telemetry.TailNumber);
+                    return true;
+                }
+
+                if (ContainsNormalized(entry.FlightNumbers, telemetry.FlightNumber, NormalizeIdentifier))
+                {
+                    match = new WatchlistMatchDto(entry.Id, entry.Label, "flight", telemetry.FlightNumber);
+                    return true;
+                }
+
+                if (ContainsNormalized(entry.Callsigns, telemetry.Callsign, NormalizeIdentifier))
+                {
+                    match = new WatchlistMatchDto(entry.Id, entry.Label, "callsign", telemetry.Callsign);
+                    return true;
+                }
+            }
+
+            match = default!;
+            return false;
+        }
+    }
+
+    private void EnsureLoaded()
+    {
+        if (entries is not null)
+        {
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            entries = [];
+            return;
+        }
+
+        var text = File.ReadAllText(path);
+        entries = string.IsNullOrWhiteSpace(text) ? [] : LoadJson(text);
+    }
+
+    private void Save()
+    {
+        var directory = System.IO.Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var document = new WatchlistDocument(entries!);
+        File.WriteAllText(path, JsonSerializer.Serialize(document, JsonOptions));
+    }
+
+    private static List<WatchlistAircraftDto> LoadJson(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        var aircraft = root.ValueKind == JsonValueKind.Array
+            ? root.EnumerateArray()
+            : root.TryGetProperty("aircraft", out var configuredAircraft) &&
+              configuredAircraft.ValueKind == JsonValueKind.Array
+                ? configuredAircraft.EnumerateArray()
+                : throw new ArgumentException("Watchlist JSON must be an array or an object with an aircraft array.");
+
+        var entries = new List<WatchlistAircraftDto>();
+        foreach (var item in aircraft)
+        {
+            var entry = new WatchlistAircraftDto(
+                GetString(item, "id") ?? Guid.NewGuid().ToString("N"),
+                GetString(item, "label", "name", "description"),
+                GetStrings(item, "icao", "icaos", "icao24", "hex", "hexid"),
+                GetStrings(item, "tail", "tails", "tailNumber", "tailNumbers", "tail_number", "registration", "registrations"),
+                GetStrings(item, "flight", "flights", "flightNumber", "flightNumbers", "flight_number"),
+                GetStrings(item, "callsign", "callsigns"));
+
+            if (!IsEmpty(entry))
+            {
+                entries.Add(entry);
+            }
+        }
+
+        return entries;
+    }
+
+    private static WatchlistAircraftDto Normalize(UpsertWatchlistAircraftRequest request, string id)
+    {
+        var item = new WatchlistAircraftDto(
+            id,
+            string.IsNullOrWhiteSpace(request.Label) ? null : request.Label.Trim(),
+            NormalizeValues(request.Icaos, NormalizeIcao),
+            NormalizeValues(request.TailNumbers, NormalizeIdentifier),
+            NormalizeValues(request.FlightNumbers, NormalizeIdentifier),
+            NormalizeValues(request.Callsigns, NormalizeIdentifier));
+
+        if (IsEmpty(item))
+        {
+            throw new ArgumentException("Watchlist aircraft must include at least one ICAO, tail, flight, or callsign identifier.");
+        }
+
+        return item;
+    }
+
+    private static bool IsEmpty(WatchlistAircraftDto item) =>
+        item.Icaos.Count == 0 &&
+        item.TailNumbers.Count == 0 &&
+        item.FlightNumbers.Count == 0 &&
+        item.Callsigns.Count == 0;
+
+    private static IReadOnlyList<string> NormalizeValues(
+        IReadOnlyList<string>? values,
+        Func<string?, string?> normalize) =>
+        values?
+            .Select(normalize)
+            .Where(value => value is not null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(value => value!)
+            .ToArray() ?? [];
+
+    private static IReadOnlyList<string> GetStrings(JsonElement item, params string[] propertyNames)
+    {
+        var values = new List<string>();
+        foreach (var name in propertyNames)
+        {
+            if (!item.TryGetProperty(name, out var property))
+            {
+                continue;
+            }
+
+            if (property.ValueKind == JsonValueKind.String)
+            {
+                AddIfPresent(values, property.GetString());
+            }
+            else if (property.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var element in property.EnumerateArray())
+                {
+                    if (element.ValueKind == JsonValueKind.String)
+                    {
+                        AddIfPresent(values, element.GetString());
+                    }
+                }
+            }
+        }
+
+        return values;
+    }
+
+    private static string? GetString(JsonElement item, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (item.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String)
+            {
+                return property.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private static void AddIfPresent(List<string> values, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            values.Add(value);
+        }
+    }
+
+    private static bool ContainsNormalized(
+        IReadOnlyList<string> configuredValues,
+        string? observedValue,
+        Func<string?, string?> normalize)
+    {
+        var observed = normalize(observedValue);
+        return observed is not null && configuredValues.Any(value => normalize(value) == observed);
+    }
+
+    private static string? NormalizeIcao(string? value)
+    {
+        var normalized = value?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        normalized = normalized.StartsWith("0X", StringComparison.Ordinal)
+            ? normalized[2..]
+            : normalized;
+
+        return normalized.Length == 6 &&
+               int.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _)
+            ? normalized
+            : null;
+    }
+
+    private static string? NormalizeIdentifier(string? value)
+    {
+        var normalized = value?.Trim().ToUpperInvariant().Replace(" ", string.Empty, StringComparison.Ordinal);
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private sealed record WatchlistDocument(IReadOnlyList<WatchlistAircraftDto> Aircraft);
+}
