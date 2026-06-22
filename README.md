@@ -86,10 +86,11 @@ Capture is disabled by default so the server can start without an RTL-SDR attach
 dotnet run --project src/Adsb.Server -- \
   --urls http://127.0.0.1:5087 \
   --Adsb:Capture:Enabled true \
-  --Adsb:Identity:RegistryPath aircraft.csv \
   --Adsb:Watchlist:Path watchlist.json \
   --Adsb:Replay:DatabasePath watchlist.sqlite
 ```
+
+The registry file is optional. U.S. N-numbers are derived automatically from the ICAO address. Set `--Adsb:Identity:RegistryPath aircraft.csv` only when you want non-U.S. or custom ICAO-to-registration lookups.
 
 SignalR:
 

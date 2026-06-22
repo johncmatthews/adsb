@@ -71,7 +71,7 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         var captureOptions = BuildAppOptions(serverOptions.Capture);
         RtlSdrNative.Configure(captureOptions.DriverPath);
 
-        var identityResolver = AircraftIdentityResolver.Load(serverOptions.Identity.RegistryPath);
+        var identityResolver = LoadIdentityResolver(serverOptions.Identity.RegistryPath);
         using var device = RtlSdrDevice.Open(captureOptions);
         device.Configure();
         status.SetDeviceConnected(true);
@@ -191,5 +191,23 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         }
 
         return AppOptions.Parse(args.ToArray());
+    }
+
+    private AircraftIdentityResolver LoadIdentityResolver(string? registryPath)
+    {
+        if (string.IsNullOrWhiteSpace(registryPath))
+        {
+            return AircraftIdentityResolver.Empty;
+        }
+
+        if (!File.Exists(registryPath))
+        {
+            logger.LogWarning(
+                "Aircraft registry file {RegistryPath} was not found. Continuing with automatic U.S. ICAO-to-N-number derivation only.",
+                registryPath);
+            return AircraftIdentityResolver.Empty;
+        }
+
+        return AircraftIdentityResolver.Load(registryPath);
     }
 }
