@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADS-B Live</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>ADS-B Live</h1>
+        <p id="subtitle">SignalR aircraft telemetry</p>
+      </div>
+      <div class="connection">
+        <span id="connectionDot" class="dot dot-idle"></span>
+        <span id="connectionState">Disconnected</span>
+      </div>
+    </header>
+
+    <section class="controls" aria-label="Connection controls">
+      <label class="server-field">
+        <span>Server</span>
+        <input id="serverUrl" type="url" spellcheck="false" value="http://127.0.0.1:5087">
+      </label>
+      <button id="connectButton" type="button">Connect</button>
+      <button id="disconnectButton" type="button" disabled>Disconnect</button>
+      <label class="search-field">
+        <span>Filter</span>
+        <input id="filterInput" type="search" spellcheck="false" placeholder="ICAO, tail, flight">
+      </label>
+    </section>
+
+    <section class="metrics" aria-label="Server status">
+      <div>
+        <span class="metric-label">Aircraft</span>
+        <strong id="aircraftCount">0</strong>
+      </div>
+      <div>
+        <span class="metric-label">Decoded</span>
+        <strong id="framesDecoded">0</strong>
+      </div>
+      <div>
+        <span class="metric-label">Published</span>
+        <strong id="eventsPublished">0</strong>
+      </div>
+      <div>
+        <span class="metric-label">Device</span>
+        <strong id="deviceStatus">Unknown</strong>
+      </div>
+      <div>
+        <span class="metric-label">Last Event</span>
+        <strong id="lastEvent">None</strong>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <section class="plot-panel" aria-label="Aircraft position plot">
+        <div class="panel-header">
+          <h2>Radar Display</h2>
+          <div class="panel-meta">
+            <span id="radarStatus">Receiver not configured</span>
+            <span id="positionCount">0 positioned</span>
+          </div>
+        </div>
+        <canvas id="plotCanvas" aria-label="Aircraft positions"></canvas>
+      </section>
+
+      <section class="activity-panel" aria-label="Activity">
+        <div class="panel-header">
+          <h2>Activity</h2>
+          <span id="watchlistCount">0 watchlist hits</span>
+        </div>
+        <ol id="activityList" class="activity-list"></ol>
+      </section>
+    </section>
+
+    <section class="table-panel" aria-label="Aircraft table">
+      <div class="panel-header">
+        <h2>Aircraft</h2>
+        <span id="tableStatus">Waiting for data</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Last Seen</th>
+              <th>ICAO</th>
+              <th>Tail</th>
+              <th>Flight</th>
+              <th>Callsign</th>
+              <th>Altitude</th>
+              <th>Speed</th>
+              <th>Track</th>
+              <th>Position</th>
+              <th>Signal</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="aircraftBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@10.0.0/dist/browser/signalr.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

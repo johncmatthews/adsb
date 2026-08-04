@@ -132,6 +132,49 @@ Optional TCP compatibility outputs can be enabled with config values:
 }
 ```
 
+## Web Client
+
+The real-time dashboard lives in `src/Adsb.Client` and connects to the SignalR server.
+
+Run the ADS-B server first:
+
+```sh
+dotnet run --project src/Adsb.Server -- \
+  --urls http://127.0.0.1:5087 \
+  --Adsb:Capture:Enabled true \
+  --Adsb:Watchlist:Path watchlist.json \
+  --Adsb:Replay:DatabasePath watchlist.sqlite
+```
+
+Then run the client:
+
+```sh
+dotnet run --project src/Adsb.Client -- \
+  --urls http://127.0.0.1:5091 \
+  --AdsbClient:Receiver:Label "Home" \
+  --AdsbClient:Receiver:Latitude 40.7128 \
+  --AdsbClient:Receiver:Longitude -74.0060 \
+  --AdsbClient:Receiver:RangeNauticalMiles 150
+```
+
+Open `http://127.0.0.1:5091`. The dashboard defaults to `http://127.0.0.1:5087` as the SignalR server URL; you can change it on screen or pass `?server=http://host:port` in the browser URL.
+
+The radar display is centered on the configured receiver location and plots aircraft by range and bearing relative to you. The same values can be stored in `src/Adsb.Client/appsettings.json`:
+
+```json
+{
+  "AdsbClient": {
+    "DefaultServerUrl": "http://127.0.0.1:5087",
+    "Receiver": {
+      "Label": "Home",
+      "Latitude": 40.7128,
+      "Longitude": -74.0060,
+      "RangeNauticalMiles": 150
+    }
+  }
+}
+```
+
 Example output:
 
 ```text
