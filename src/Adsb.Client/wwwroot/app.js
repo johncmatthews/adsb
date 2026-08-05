@@ -41,6 +41,8 @@ elements.connectButton.addEventListener("click", () => connect().catch(showConne
 elements.disconnectButton.addEventListener("click", disconnect);
 elements.filterInput.addEventListener("input", requestRender);
 window.addEventListener("resize", requestRender);
+window.addEventListener("orientationchange", () => setTimeout(requestRender, 250));
+window.visualViewport?.addEventListener("resize", requestRender);
 
 initialize();
 
@@ -474,7 +476,7 @@ function updateRadarStatus() {
 }
 
 function getRadarRadius(width, height) {
-  return Math.max(1, Math.min(width, height) * 0.42);
+  return Math.max(1, Math.min(width, height) * 0.44);
 }
 
 function getBearingAndDistance(lat1, lon1, lat2, lon2) {
