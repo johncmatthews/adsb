@@ -72,6 +72,109 @@ Example watchlist:
 
 Each matching decoded message is written to the `watchlist_telemetry` table with UTC timestamp, matched watchlist identifier, ICAO, tail, flight number, callsign, position, altitude, speed, heading/track, vertical rate, raw frame, signal strength, and CRC status.
 
+## Server
+
+The ASP.NET Core server exposes the decode pipeline to future clients over SignalR and REST.
+
+```sh
+dotnet run --project src/Adsb.Server --urls http://127.0.0.1:5087
+```
+
+Capture is disabled by default so the server can start without an RTL-SDR attached. Enable live capture with configuration:
+
+```sh
+dotnet run --project src/Adsb.Server -- \
+  --urls http://127.0.0.1:5087 \
+  --Adsb:Capture:Enabled true \
+  --Adsb:Watchlist:Path watchlist.json \
+  --Adsb:Replay:DatabasePath watchlist.sqlite
+```
+
+The registry file is optional. U.S. N-numbers are derived automatically from the ICAO address. Set `--Adsb:Identity:RegistryPath aircraft.csv` only when you want non-U.S. or custom ICAO-to-registration lookups.
+
+SignalR:
+
+- Hub: `/hubs/adsb`
+- Server-to-client events: `aircraftUpdated`, `watchlistTelemetry`
+- Client-callable methods: `GetAircraftSnapshot`, `GetStatus`
+
+REST endpoints:
+
+- `GET /healthz`
+- `GET /api/status`
+- `GET /api/stats`
+- `GET /api/aircraft`
+- `GET /api/aircraft/{icao-or-tail-or-flight-or-callsign}`
+- `GET /api/watchlist`
+- `POST /api/watchlist`
+- `PUT /api/watchlist/{id}`
+- `DELETE /api/watchlist/{id}`
+- `GET /api/replay/sessions`
+- `GET /api/replay/events?icao=4840D6&limit=1000`
+
+Compatibility streams:
+
+- `GET /compat/jsonl`
+- `GET /compat/sbs`
+- `GET /compat/beast`
+
+Optional TCP compatibility outputs can be enabled with config values:
+
+```json
+{
+  "Adsb": {
+    "Compatibility": {
+      "SbsTcpPort": 30003,
+      "JsonLinesTcpPort": 31000,
+      "BeastTcpPort": 30005
+    }
+  }
+}
+```
+
+## Web Client
+
+The real-time dashboard lives in `src/Adsb.Client` and connects to the SignalR server.
+
+Run the ADS-B server first:
+
+```sh
+dotnet run --project src/Adsb.Server -- \
+  --urls http://127.0.0.1:5087 \
+  --Adsb:Capture:Enabled true \
+  --Adsb:Watchlist:Path watchlist.json \
+  --Adsb:Replay:DatabasePath watchlist.sqlite
+```
+
+Then run the client:
+
+```sh
+dotnet run --project src/Adsb.Client -- \
+  --urls http://127.0.0.1:5091 \
+  --AdsbClient:Receiver:Label "Home" \
+  --AdsbClient:Receiver:Latitude 40.7128 \
+  --AdsbClient:Receiver:Longitude -74.0060 \
+  --AdsbClient:Receiver:RangeNauticalMiles 150
+```
+
+Open `http://127.0.0.1:5091`. The dashboard defaults to `http://127.0.0.1:5087` as the SignalR server URL; you can change it on screen or pass `?server=http://host:port` in the browser URL.
+
+The radar display is centered on the configured receiver location and plots aircraft by range and bearing relative to you. The same values can be stored in `src/Adsb.Client/appsettings.json`:
+
+```json
+{
+  "AdsbClient": {
+    "DefaultServerUrl": "http://127.0.0.1:5087",
+    "Receiver": {
+      "Label": "Home",
+      "Latitude": 40.7128,
+      "Longitude": -74.0060,
+      "RangeNauticalMiles": 150
+    }
+  }
+}
+```
+
 Example output:
 
 ```text
