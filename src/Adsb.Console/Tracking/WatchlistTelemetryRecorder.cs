@@ -3,11 +3,17 @@ using System.Data.SQLite;
 
 namespace Adsb.Tracking;
 
+/// <summary>
+/// Records timestamped ADS-B telemetry to SQLite when an aircraft matches the configured watchlist.
+/// </summary>
 public sealed class WatchlistTelemetryRecorder : IDisposable
 {
     private readonly AircraftWatchlist watchlist;
     private readonly SQLiteConnection? connection;
 
+    /// <summary>
+    /// Creates a recorder around an optional open SQLite connection; a null connection represents disabled recording.
+    /// </summary>
     private WatchlistTelemetryRecorder(AircraftWatchlist watchlist, SQLiteConnection? connection, string? databasePath)
     {
         this.watchlist = watchlist;
@@ -15,10 +21,24 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         DatabasePath = databasePath;
     }
 
+    /// <summary>
+    /// True when a watchlist file was supplied and the recorder has an open SQLite database connection.
+    /// </summary>
     public bool Enabled => connection is not null;
+    /// <summary>
+    /// Absolute SQLite database path used by the recorder, or null when recording is disabled.
+    /// </summary>
     public string? DatabasePath { get; }
+    /// <summary>
+    /// Number of watchlist entries loaded for matching.
+    /// </summary>
     public int WatchlistCount => watchlist.Count;
 
+    /// <summary>
+    /// Opens the watchlist and SQLite database, creating the database schema when recording is enabled.
+    /// </summary>
+    /// <param name="watchlistPath">Optional watchlist path; when null or empty the returned recorder is disabled.</param>
+    /// <param name="databasePath">SQLite database path for captured watchlist telemetry.</param>
     public static WatchlistTelemetryRecorder Open(string? watchlistPath, string databasePath)
     {
         if (string.IsNullOrWhiteSpace(watchlistPath))
@@ -41,6 +61,10 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         return new WatchlistTelemetryRecorder(watchlist, connection, fullPath);
     }
 
+    /// <summary>
+    /// Matches the decoded aircraft identity against the watchlist and inserts a telemetry row when it matches.
+    /// </summary>
+    /// <returns>True when a row was written to the database.</returns>
     public bool TryRecord(ModeSMessage message, AircraftSnapshot? snapshot)
     {
         if (connection is null)
@@ -63,11 +87,17 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Closes the SQLite connection held by the recorder.
+    /// </summary>
     public void Dispose()
     {
         connection?.Dispose();
     }
 
+    /// <summary>
+    /// Creates the watchlist telemetry schema and indexes needed for later replay and filtering.
+    /// </summary>
     private static void Initialize(SQLiteConnection connection)
     {
         Execute(connection, "PRAGMA journal_mode = WAL;");
@@ -122,6 +152,9 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
             "CREATE INDEX IF NOT EXISTS ix_watchlist_telemetry_flight_number ON watchlist_telemetry(flight_number);");
     }
 
+    /// <summary>
+    /// Inserts one matched telemetry event, combining fields from the current frame and accumulated aircraft state.
+    /// </summary>
     private void Insert(ModeSMessage message, AircraftSnapshot? snapshot, WatchlistMatch match)
     {
         using var command = connection!.CreateCommand();
@@ -212,6 +245,9 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Executes a schema or SQLite pragma command against the recorder connection.
+    /// </summary>
     private static void Execute(SQLiteConnection connection, string commandText)
     {
         using var command = connection.CreateCommand();
@@ -219,6 +255,9 @@ public sealed class WatchlistTelemetryRecorder : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Adds a SQLite parameter, translating null reference values into database NULL.
+    /// </summary>
     private static void Add(SQLiteCommand command, string name, object? value)
     {
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);

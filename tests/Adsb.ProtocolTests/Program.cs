@@ -26,20 +26,32 @@ tests.CompatibilityFormattersProduceOutput();
 
 Console.WriteLine("Protocol tests passed.");
 
+/// <summary>
+/// Lightweight executable test harness for decoder, identity, watchlist, replay, and compatibility behavior.
+/// </summary>
 internal sealed class ProtocolTests
 {
+    /// <summary>
+    /// Verifies that a known-good ADS-B frame produces a zero Mode S CRC remainder.
+    /// </summary>
     public void CrcAcceptsKnownGoodFrame()
     {
         var frame = Frame("8D406B902015A678D4D220AA4BDA");
         AssertEqual(0u, ModeSCrc.ComputeRemainder(frame.Data, frame.BitLength), "CRC good frame");
     }
 
+    /// <summary>
+    /// Verifies that a known-bad frame returns the expected non-zero CRC remainder for diagnostics.
+    /// </summary>
     public void CrcReturnsKnownRemainderForBadFrame()
     {
         var frame = Frame("8D4CA251204994B1C36E60A5343D");
         AssertEqual(16u, ModeSCrc.ComputeRemainder(frame.Data, frame.BitLength), "CRC bad frame remainder");
     }
 
+    /// <summary>
+    /// Verifies ADS-B aircraft identification decoding for callsign, ICAO, category, and type code fields.
+    /// </summary>
     public void DecodesAircraftIdentification()
     {
         var message = Decode("8D4840D6202CC371C32CE0576098");
@@ -51,6 +63,9 @@ internal sealed class ProtocolTests
         AssertEqual(0, message.Category, "ident category");
     }
 
+    /// <summary>
+    /// Verifies airborne position messages expose barometric altitude and raw CPR fields for later position recovery.
+    /// </summary>
     public void DecodesAirbornePositionAndAltitude()
     {
         var message = Decode("8D40621D58C382D690C8AC2863A7");
@@ -63,6 +78,9 @@ internal sealed class ProtocolTests
         AssertEqual(51_372, message.Cpr?.EncodedLongitude, "position encoded lon");
     }
 
+    /// <summary>
+    /// Verifies the state tracker combines a recent even/odd CPR pair into a global latitude and longitude.
+    /// </summary>
     public void DecodesGlobalCprPosition()
     {
         var tracker = new AircraftStateTracker();
@@ -73,6 +91,9 @@ internal sealed class ProtocolTests
         AssertNear(3.93891, snapshot?.Longitude, 0.0001, "CPR longitude");
     }
 
+    /// <summary>
+    /// Verifies ADS-B velocity decoding for subtype, ground speed, track, vertical rate, and altitude source.
+    /// </summary>
     public void DecodesGroundSpeedVelocity()
     {
         var message = Decode("8D485020994409940838175B284F");
@@ -85,6 +106,9 @@ internal sealed class ProtocolTests
         AssertEqual("baro", message.Velocity?.VerticalRateSource, "velocity vertical source");
     }
 
+    /// <summary>
+    /// Verifies deterministic U.S. ICAO address decoding across representative N-number allocation cases.
+    /// </summary>
     public void DerivesUnitedStatesTailNumberFromIcao()
     {
         var resolver = AircraftIdentityResolver.Empty;
@@ -94,6 +118,9 @@ internal sealed class ProtocolTests
         AssertEqual("N97LM", resolver.ResolveTailNumber("AD8252"), "US N-number short suffix");
     }
 
+    /// <summary>
+    /// Verifies registry CSV lookup overrides automatic identity derivation for non-U.S. registrations.
+    /// </summary>
     public void LoadsTailNumberFromRegistryCsv()
     {
         var path = Path.Combine(Path.GetTempPath(), $"adsb-registry-{Guid.NewGuid():N}.csv");
@@ -109,6 +136,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies console output includes tail and flight identifiers without duplicating the callsign field.
+    /// </summary>
     public void FormatsTailAndFlightIdentifiers()
     {
         var path = Path.Combine(Path.GetTempPath(), $"adsb-registry-{Guid.NewGuid():N}.csv");
@@ -130,6 +160,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies JSON watchlist loading and tail-number matching preserve the configured label and match metadata.
+    /// </summary>
     public void WatchlistMatchesJsonConfigByTailNumber()
     {
         var directory = CreateTempDirectory();
@@ -162,6 +195,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies the console watchlist recorder writes matched telemetry fields to SQLite.
+    /// </summary>
     public void RecordsMatchedTelemetryToSqlite()
     {
         var directory = CreateTempDirectory();
@@ -214,6 +250,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies server watchlist CRUD normalizes identifiers and matches live telemetry by the updated entry contents.
+    /// </summary>
     public void ServerWatchlistCrudMatchesTelemetry()
     {
         var directory = CreateTempDirectory();
@@ -255,6 +294,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies the server replay store records watchlist events, summarizes sessions, and filters replay queries.
+    /// </summary>
     public void ServerReplayStoreRecordsAndQueriesEvents()
     {
         var directory = CreateTempDirectory();
@@ -293,6 +335,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Verifies latest aircraft snapshots can be retrieved by ICAO, tail number, or flight number.
+    /// </summary>
     public void ServerSnapshotStoreFindsAircraftByAnyIdentifier()
     {
         var store = new AircraftSnapshotStore();
@@ -304,6 +349,9 @@ internal sealed class ProtocolTests
         AssertEqual(true, store.TryGet("KLM1023", out _), "snapshot by flight");
     }
 
+    /// <summary>
+    /// Verifies JSONL, SBS, and Beast compatibility encoders produce recognizable output for sample telemetry.
+    /// </summary>
     public void CompatibilityFormattersProduceOutput()
     {
         var telemetry = SampleTelemetry();
@@ -316,15 +364,24 @@ internal sealed class ProtocolTests
         AssertEqual((byte)0x1A, beast[0], "compat Beast prefix");
     }
 
+    /// <summary>
+    /// Decodes a hexadecimal Mode S frame with the production decoder for test scenarios.
+    /// </summary>
     private static ModeSMessage Decode(string hex, DateTimeOffset? receivedAt = null)
     {
         var decoder = new ModeSDecoder();
         return decoder.Decode(Frame(hex, receivedAt));
     }
 
+    /// <summary>
+    /// Creates a demodulated frame fixture from hexadecimal payload text.
+    /// </summary>
     private static DemodulatedFrame Frame(string hex, DateTimeOffset? receivedAt = null) =>
         new(Convert.FromHexString(hex), hex.Length * 4, SignalDb: 12.5, receivedAt ?? DateTimeOffset.UnixEpoch);
 
+    /// <summary>
+    /// Creates an isolated temporary directory for tests that write JSON or SQLite files.
+    /// </summary>
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"adsb-tests-{Guid.NewGuid():N}");
@@ -332,12 +389,21 @@ internal sealed class ProtocolTests
         return path;
     }
 
+    /// <summary>
+    /// Creates a server watchlist store configured to use a test-specific JSON path.
+    /// </summary>
     private static WatchlistConfigStore CreateWatchlistStore(string path) =>
         new(Options.Create(new AdsbServerOptions { Watchlist = new WatchlistOptions { Path = path } }));
 
+    /// <summary>
+    /// Creates a replay store configured to use a test-specific SQLite database path.
+    /// </summary>
     private static ReplayStore CreateReplayStore(string path) =>
         new(Options.Create(new AdsbServerOptions { Replay = new ReplayOptions { DatabasePath = path } }));
 
+    /// <summary>
+    /// Provides a representative decoded aircraft telemetry event shared by server and compatibility tests.
+    /// </summary>
     private static AircraftTelemetryEvent SampleTelemetry() =>
         new(
             DateTimeOffset.Parse("2026-06-16T12:34:56Z"),
@@ -363,6 +429,9 @@ internal sealed class ProtocolTests
             CrcRemainder: "000000",
             RawHex: "8D4840D6202CC371C32CE0576098");
 
+    /// <summary>
+    /// Throws a labeled assertion failure when two values are not equal.
+    /// </summary>
     private static void AssertEqual<T>(T expected, T actual, string label)
     {
         if (!EqualityComparer<T>.Default.Equals(expected, actual))
@@ -371,6 +440,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Throws a labeled assertion failure when a numeric value is missing or outside the allowed tolerance.
+    /// </summary>
     private static void AssertNear(double expected, double? actual, double tolerance, string label)
     {
         if (!actual.HasValue || Math.Abs(expected - actual.Value) > tolerance)
@@ -379,6 +451,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Throws a labeled assertion failure when a string does not contain the expected fragment.
+    /// </summary>
     private static void AssertContains(string expected, string actual, string label)
     {
         if (!actual.Contains(expected, StringComparison.Ordinal))
@@ -387,6 +462,9 @@ internal sealed class ProtocolTests
         }
     }
 
+    /// <summary>
+    /// Throws a labeled assertion failure when a string contains a fragment that should be absent.
+    /// </summary>
     private static void AssertDoesNotContain(string unexpected, string actual, string label)
     {
         if (actual.Contains(unexpected, StringComparison.Ordinal))

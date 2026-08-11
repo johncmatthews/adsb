@@ -4,13 +4,22 @@ using Adsb.Server.Contracts;
 
 namespace Adsb.Server.Compatibility;
 
+/// <summary>
+/// Converts normalized ADS-B telemetry into optional compatibility output formats used by existing receiver tools.
+/// </summary>
 public static class CompatibilityFormatters
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Serializes telemetry as one newline-delimited JSON object.
+    /// </summary>
     public static string ToJsonLine(AircraftTelemetryEvent telemetry) =>
         JsonSerializer.Serialize(telemetry, JsonOptions) + "\n";
 
+    /// <summary>
+    /// Formats telemetry as an SBS/BaseStation MSG line using the closest message type for the fields present.
+    /// </summary>
     public static string ToSbsLine(AircraftTelemetryEvent telemetry)
     {
         var date = telemetry.ReceivedAtUtc.UtcDateTime.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture);
@@ -47,6 +56,9 @@ public static class CompatibilityFormatters
             telemetry.CrcOk ? "0" : "1") + "\n";
     }
 
+    /// <summary>
+    /// Encodes the raw Mode S frame in Beast binary format with timestamp, signal level, and byte stuffing.
+    /// </summary>
     public static byte[] ToBeastFrame(AircraftTelemetryEvent telemetry)
     {
         var raw = Convert.FromHexString(telemetry.RawHex);
@@ -70,6 +82,9 @@ public static class CompatibilityFormatters
         return EscapeBeast(payload);
     }
 
+    /// <summary>
+    /// Applies Beast byte stuffing by duplicating each frame delimiter byte inside the payload.
+    /// </summary>
     private static byte[] EscapeBeast(IReadOnlyList<byte> payload)
     {
         var escaped = new List<byte>(payload.Count + 2);

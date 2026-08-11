@@ -7,12 +7,18 @@ using Microsoft.Extensions.Options;
 
 namespace Adsb.Server.Compatibility;
 
+/// <summary>
+/// Hosts optional TCP compatibility feeds that stream live telemetry in JSONL, SBS, or Beast formats.
+/// </summary>
 public sealed class CompatibilityTcpServerHostedService : BackgroundService
 {
     private readonly TelemetryEventBus eventBus;
     private readonly CompatibilityOptions options;
     private readonly ILogger<CompatibilityTcpServerHostedService> logger;
 
+    /// <summary>
+    /// Creates the compatibility server with the live telemetry bus and configured listener ports.
+    /// </summary>
     public CompatibilityTcpServerHostedService(
         TelemetryEventBus eventBus,
         IOptions<AdsbServerOptions> options,
@@ -23,6 +29,9 @@ public sealed class CompatibilityTcpServerHostedService : BackgroundService
         this.logger = logger;
     }
 
+    /// <summary>
+    /// Starts one TCP listener per enabled compatibility output and keeps them running until shutdown.
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var tasks = new List<Task>();
@@ -49,6 +58,9 @@ public sealed class CompatibilityTcpServerHostedService : BackgroundService
         await Task.WhenAll(tasks);
     }
 
+    /// <summary>
+    /// Starts a text compatibility listener whose clients receive formatted telemetry lines.
+    /// </summary>
     private async Task RunTextServerAsync(
         string name,
         int port,
@@ -70,6 +82,9 @@ public sealed class CompatibilityTcpServerHostedService : BackgroundService
             stoppingToken);
     }
 
+    /// <summary>
+    /// Starts a binary compatibility listener whose clients receive encoded telemetry frames.
+    /// </summary>
     private async Task RunBinaryServerAsync(
         string name,
         int port,
@@ -92,6 +107,9 @@ public sealed class CompatibilityTcpServerHostedService : BackgroundService
             stoppingToken);
     }
 
+    /// <summary>
+    /// Accepts TCP clients for one compatibility feed and runs each client handler on its own task.
+    /// </summary>
     private async Task RunServerAsync(
         string name,
         int port,

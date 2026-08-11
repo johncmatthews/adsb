@@ -1,5 +1,8 @@
 namespace Adsb.Decoding;
 
+/// <summary>
+/// Maintains the latest known aircraft state per ICAO address and combines partial ADS-B messages into snapshots.
+/// </summary>
 public sealed class AircraftStateTracker
 {
     private readonly Dictionary<string, MutableAircraftState> aircraft = new(StringComparer.OrdinalIgnoreCase);
@@ -7,6 +10,10 @@ public sealed class AircraftStateTracker
     private readonly double? receiverLongitude;
     private readonly AircraftIdentityResolver identityResolver;
 
+    /// <summary>
+    /// Creates a tracker that can optionally use receiver coordinates as a local CPR reference and an identity resolver
+    /// for tail number and flight number enrichment.
+    /// </summary>
     public AircraftStateTracker(
         double? receiverLatitude = null,
         double? receiverLongitude = null,
@@ -17,6 +24,13 @@ public sealed class AircraftStateTracker
         this.identityResolver = identityResolver ?? AircraftIdentityResolver.Empty;
     }
 
+    /// <summary>
+    /// Applies a decoded message to the per-aircraft state cache and returns the latest complete snapshot for that ICAO.
+    /// </summary>
+    /// <param name="message">A decoded Mode S or ADS-B message.</param>
+    /// <returns>
+    /// The updated aircraft snapshot, or null when the message has no ICAO address and cannot be attached to an aircraft.
+    /// </returns>
     public AircraftSnapshot? Apply(ModeSMessage message)
     {
         if (message.Icao is null)
@@ -97,6 +111,9 @@ public sealed class AircraftStateTracker
             state.VerticalRateFeetPerMinute);
     }
 
+    /// <summary>
+    /// Retrieves the mutable state bucket for an ICAO address, creating it when this is the first frame seen.
+    /// </summary>
     private MutableAircraftState GetOrCreate(string icao)
     {
         if (!aircraft.TryGetValue(icao, out var state))
@@ -108,6 +125,13 @@ public sealed class AircraftStateTracker
         return state;
     }
 
+    /// <summary>
+    /// Combines a recent even and odd CPR frame into an unambiguous global latitude/longitude position.
+    /// </summary>
+    /// <remarks>
+    /// ADS-B global CPR requires one even and one odd frame received close together; this implementation rejects
+    /// stale pairs and pairs that cross latitude zone boundaries.
+    /// </remarks>
     private static bool TryDecodeGlobalPosition(
         CprFrame? even,
         CprFrame? odd,
@@ -171,6 +195,12 @@ public sealed class AircraftStateTracker
         return true;
     }
 
+    /// <summary>
+    /// Decodes a single CPR frame relative to the receiver location when a matching even/odd global pair is unavailable.
+    /// </summary>
+    /// <remarks>
+    /// Local CPR is only reliable near the receiver reference, so callers should provide the actual receiver coordinates.
+    /// </remarks>
     private static bool TryDecodeLocalPosition(
         CprFrame cpr,
         double referenceLatitude,
@@ -208,9 +238,15 @@ public sealed class AircraftStateTracker
         return latitude is >= -90 and <= 90 && longitude is >= -180 and <= 180;
     }
 
+    /// <summary>
+    /// Computes a positive modulo value used by the CPR equations for wrapping latitude and longitude zones.
+    /// </summary>
     private static double Modulo(double value, double divisor) =>
         value - (divisor * Math.Floor(value / divisor));
 
+    /// <summary>
+    /// Stores the partial values learned from different ADS-B frames until enough information exists for a snapshot.
+    /// </summary>
     private sealed class MutableAircraftState
     {
         public string? Callsign { get; set; }

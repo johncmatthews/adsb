@@ -3,6 +3,9 @@ using System.Threading.Channels;
 
 namespace Adsb.Radio;
 
+/// <summary>
+/// Managed lifetime wrapper around an open RTL-SDR device handle.
+/// </summary>
 public sealed class RtlSdrDevice : IDisposable
 {
     private readonly AppOptions options;
@@ -10,12 +13,18 @@ public sealed class RtlSdrDevice : IDisposable
     private bool disposed;
     private RtlSdrNative.ReadAsyncCallback? callback;
 
+    /// <summary>
+    /// Captures the open native handle and the options used for subsequent tuner configuration.
+    /// </summary>
     private RtlSdrDevice(AppOptions options, IntPtr handle)
     {
         this.options = options;
         this.handle = handle;
     }
 
+    /// <summary>
+    /// Enumerates RTL-SDR devices visible to librtlsdr and returns display-friendly USB identity fields.
+    /// </summary>
     public static IReadOnlyList<RtlSdrDeviceInfo> ListDevices()
     {
         var count = RtlSdrNative.GetDeviceCount();
@@ -44,6 +53,9 @@ public sealed class RtlSdrDevice : IDisposable
         return devices;
     }
 
+    /// <summary>
+    /// Opens an RTL-SDR device by index and returns a disposable wrapper for the native handle.
+    /// </summary>
     public static RtlSdrDevice Open(AppOptions options)
     {
         var result = RtlSdrNative.Open(out var handle, options.DeviceIndex);
@@ -51,6 +63,9 @@ public sealed class RtlSdrDevice : IDisposable
         return new RtlSdrDevice(options, handle);
     }
 
+    /// <summary>
+    /// Applies sample rate, center frequency, optional PPM correction, tuner gain, and buffer reset settings.
+    /// </summary>
     public void Configure()
     {
         EnsureNotDisposed();
@@ -75,6 +90,13 @@ public sealed class RtlSdrDevice : IDisposable
         RtlSdrNative.ThrowIfError(RtlSdrNative.ResetBuffer(handle), "Failed to reset RTL-SDR sample buffer");
     }
 
+    /// <summary>
+    /// Starts native asynchronous sample capture and forwards each completed sample buffer to managed pipeline code.
+    /// </summary>
+    /// <remarks>
+    /// The native callback copies sample bytes immediately because librtlsdr owns the callback buffer after return.
+    /// Cancellation asks librtlsdr to stop the blocking async read loop before the managed task completes.
+    /// </remarks>
     public async Task RunAsync(
         Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> onSamples,
         CancellationToken cancellationToken)
@@ -134,6 +156,9 @@ public sealed class RtlSdrDevice : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops pending asynchronous reads and closes the native RTL-SDR handle.
+    /// </summary>
     public void Dispose()
     {
         if (disposed)
@@ -146,6 +171,9 @@ public sealed class RtlSdrDevice : IDisposable
         disposed = true;
     }
 
+    /// <summary>
+    /// Configures tuner gain according to the CLI setting, including resolving the highest device-supported gain.
+    /// </summary>
     private void ConfigureGain()
     {
         switch (options.Gain.Mode)
@@ -168,6 +196,9 @@ public sealed class RtlSdrDevice : IDisposable
         }
     }
 
+    /// <summary>
+    /// Queries librtlsdr for supported manual tuner gains, returned in tenths of a decibel.
+    /// </summary>
     private IReadOnlyList<int> GetAvailableGains()
     {
         var count = RtlSdrNative.GetTunerGains(handle, IntPtr.Zero);
@@ -195,11 +226,17 @@ public sealed class RtlSdrDevice : IDisposable
         }
     }
 
+    /// <summary>
+    /// Throws when an operation attempts to use a device handle after it has been closed.
+    /// </summary>
     private void EnsureNotDisposed()
     {
         ObjectDisposedException.ThrowIf(disposed, this);
     }
 
+    /// <summary>
+    /// Converts a fixed-size null-terminated USB string buffer from librtlsdr into managed text.
+    /// </summary>
     private static string ReadCString(byte[] buffer)
     {
         var length = Array.IndexOf(buffer, (byte)0);

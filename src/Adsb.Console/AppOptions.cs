@@ -2,27 +2,53 @@ using System.Globalization;
 
 namespace Adsb;
 
+/// <summary>
+/// Command-line configuration for the console ADS-B receiver and watchlist recorder.
+/// </summary>
 public sealed class AppOptions
 {
+    /// <summary>Zero-based RTL-SDR device index passed to librtlsdr.</summary>
     public uint DeviceIndex { get; private init; }
+    /// <summary>Center frequency in hertz; ADS-B uses 1090 MHz by default.</summary>
     public uint FrequencyHz { get; private init; } = 1_090_000_000;
+    /// <summary>Sample rate in samples per second; the demodulator currently supports 2 Msps.</summary>
     public uint SampleRate { get; private init; } = 2_000_000;
+    /// <summary>Tuner gain selection, either automatic, maximum supported gain, or a manual tenth-dB value.</summary>
     public GainSetting Gain { get; private init; } = GainSetting.Max;
+    /// <summary>Frequency correction applied by the tuner in parts per million.</summary>
     public int FrequencyCorrectionPpm { get; private init; }
+    /// <summary>Number of asynchronous native buffers requested from librtlsdr.</summary>
     public uint AsyncBufferCount { get; private init; } = 16;
+    /// <summary>Size in bytes of each asynchronous native sample buffer.</summary>
     public uint AsyncBufferSize { get; private init; } = 262_144;
+    /// <summary>Optional explicit path to the native librtlsdr library.</summary>
     public string? DriverPath { get; private init; }
+    /// <summary>Optional ICAO-to-registration CSV used to enrich aircraft identity output.</summary>
     public string? RegistryPath { get; private init; }
+    /// <summary>Optional aircraft watchlist file that enables SQLite telemetry recording.</summary>
     public string? WatchlistPath { get; private init; }
+    /// <summary>SQLite database path used when watchlist recording is enabled.</summary>
     public string TelemetryDatabasePath { get; private init; } = "adsb-watchlist.sqlite";
+    /// <summary>Whether decoded frames with invalid CRC remainders should still be printed.</summary>
     public bool IncludeInvalidFrames { get; private init; }
+    /// <summary>Whether non-ADS-B Mode S frames should be printed alongside extended squitter frames.</summary>
     public bool IncludeNonAdsbFrames { get; private init; }
+    /// <summary>Whether console output includes raw hexadecimal frames.</summary>
     public bool ShowRawFrames { get; private init; }
+    /// <summary>Whether startup should list visible RTL-SDR devices and exit.</summary>
     public bool ListDevices { get; private init; }
+    /// <summary>Whether startup should print command-line usage and exit.</summary>
     public bool ShowHelp { get; private init; }
+    /// <summary>Receiver latitude used as a reference for local CPR position recovery.</summary>
     public double? ReceiverLatitude { get; private init; }
+    /// <summary>Receiver longitude used as a reference for local CPR position recovery.</summary>
     public double? ReceiverLongitude { get; private init; }
 
+    /// <summary>
+    /// Parses command-line switches into strongly typed receiver, decoder, and watchlist options.
+    /// </summary>
+    /// <param name="args">Command-line arguments after the executable name.</param>
+    /// <returns>Validated application options ready to use by the console entry point.</returns>
     public static AppOptions Parse(string[] args)
     {
         var options = new AppOptions();
@@ -157,6 +183,9 @@ public sealed class AppOptions
             };
     }
 
+    /// <summary>
+    /// Writes the user-facing command-line help text, including native driver setup hints.
+    /// </summary>
     public static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine("ADS-B RTL-SDR decoder");
@@ -188,6 +217,9 @@ public sealed class AppOptions
         writer.WriteLine("  Windows: place rtlsdr.dll where the app can load it, or pass --driver");
     }
 
+    /// <summary>
+    /// Validates option combinations that cannot be checked while individual switches are parsed.
+    /// </summary>
     private void Validate()
     {
         if (SampleRate != 2_000_000)
@@ -240,6 +272,9 @@ public sealed class AppOptions
         }
     }
 
+    /// <summary>
+    /// Reads the next command-line token as an option value and advances the parser index.
+    /// </summary>
     private static string RequireValue(string[] args, ref int index, string option)
     {
         if (index + 1 >= args.Length)
@@ -251,6 +286,9 @@ public sealed class AppOptions
         return args[index];
     }
 
+    /// <summary>
+    /// Parses unsigned integer option values using invariant culture so CLI behavior is locale independent.
+    /// </summary>
     private static uint ParseUInt(string value, string option)
     {
         if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
@@ -261,6 +299,9 @@ public sealed class AppOptions
         return parsed;
     }
 
+    /// <summary>
+    /// Parses signed integer option values using invariant culture so CLI behavior is locale independent.
+    /// </summary>
     private static int ParseInt(string value, string option)
     {
         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
@@ -271,6 +312,9 @@ public sealed class AppOptions
         return parsed;
     }
 
+    /// <summary>
+    /// Parses floating-point option values such as receiver coordinates using invariant culture.
+    /// </summary>
     private static double ParseDouble(string value, string option)
     {
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
@@ -281,6 +325,9 @@ public sealed class AppOptions
         return parsed;
     }
 
+    /// <summary>
+    /// Parses a frequency string with optional kHz, MHz, or GHz suffix and returns hertz.
+    /// </summary>
     private static uint ParseFrequency(string value, string option)
     {
         var normalized = value.Trim().ToLowerInvariant();
@@ -332,18 +379,34 @@ public sealed class AppOptions
     }
 }
 
+/// <summary>
+/// Tuner gain mode requested from librtlsdr.
+/// </summary>
 public enum GainMode
 {
+    /// <summary>Let the tuner choose gain automatically.</summary>
     Auto,
+    /// <summary>Use the highest tuner gain reported by the device.</summary>
     Max,
+    /// <summary>Use the manual tenth-dB gain value carried by <see cref="GainSetting"/>.</summary>
     Manual
 }
 
+/// <summary>
+/// Gain selection used when configuring the RTL-SDR tuner.
+/// </summary>
+/// <param name="Mode">How the gain should be selected.</param>
+/// <param name="TenthDb">Manual gain in tenths of a decibel; ignored for automatic and max modes.</param>
 public readonly record struct GainSetting(GainMode Mode, int TenthDb)
 {
+    /// <summary>Automatic tuner gain setting.</summary>
     public static GainSetting Auto { get; } = new(GainMode.Auto, 0);
+    /// <summary>Highest available tuner gain setting.</summary>
     public static GainSetting Max { get; } = new(GainMode.Max, 0);
 
+    /// <summary>
+    /// Parses CLI gain text into automatic, maximum, or manual tenth-dB gain settings.
+    /// </summary>
     public static GainSetting Parse(string value)
     {
         if (value.Equals("auto", StringComparison.OrdinalIgnoreCase))
@@ -364,6 +427,9 @@ public readonly record struct GainSetting(GainMode Mode, int TenthDb)
         return new GainSetting(GainMode.Manual, (int)Math.Round(db * 10));
     }
 
+    /// <summary>
+    /// Formats the gain setting using the same vocabulary accepted by the command line.
+    /// </summary>
     public override string ToString() =>
         Mode switch
         {

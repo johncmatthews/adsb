@@ -1,7 +1,15 @@
 namespace Adsb.Decoding;
 
+/// <summary>
+/// Compact Position Reporting helpers used to recover ADS-B latitude and longitude values.
+/// </summary>
 public static class CprMath
 {
+    /// <summary>
+    /// Returns the number of longitude zones for a latitude as defined by the ADS-B CPR NL function.
+    /// </summary>
+    /// <param name="latitude">Latitude in degrees.</param>
+    /// <returns>The longitude zone count used by even and odd CPR position reconstruction.</returns>
     public static int NL(double latitude)
     {
         var lat = Math.Abs(latitude);

@@ -8,6 +8,9 @@ using Microsoft.Extensions.Options;
 
 namespace Adsb.Server.Services;
 
+/// <summary>
+/// Background service that owns the ADS-B capture pipeline and publishes normalized telemetry to server consumers.
+/// </summary>
 public sealed class AdsbCaptureHostedService : BackgroundService
 {
     private readonly IOptions<AdsbServerOptions> options;
@@ -19,6 +22,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
     private readonly IHubContext<AdsbHub> hubContext;
     private readonly ILogger<AdsbCaptureHostedService> logger;
 
+    /// <summary>
+    /// Creates the capture service with shared stores, event publishers, replay storage, and logging dependencies.
+    /// </summary>
     public AdsbCaptureHostedService(
         IOptions<AdsbServerOptions> options,
         AircraftSnapshotStore aircraft,
@@ -39,6 +45,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         this.logger = logger;
     }
 
+    /// <summary>
+    /// Initializes replay storage and starts RTL-SDR capture when capture is enabled in configuration.
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var serverOptions = options.Value;
@@ -66,6 +75,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Opens the RTL-SDR device and runs the demodulate, decode, track, publish, SignalR, and watchlist replay pipeline.
+    /// </summary>
     private async Task RunCaptureAsync(AdsbServerOptions serverOptions, CancellationToken stoppingToken)
     {
         var captureOptions = BuildAppOptions(serverOptions.Capture);
@@ -127,6 +139,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
             stoppingToken);
     }
 
+    /// <summary>
+    /// Applies server capture filters before events reach snapshots, SignalR, REST, or compatibility outputs.
+    /// </summary>
     private static bool ShouldPublish(ModeSMessage message, AppOptions options)
     {
         if (!options.IncludeInvalidFrames && !message.CrcOk)
@@ -142,6 +157,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         return true;
     }
 
+    /// <summary>
+    /// Converts server configuration into the shared console <see cref="AppOptions"/> type used by the radio wrapper.
+    /// </summary>
     private static AppOptions BuildAppOptions(CaptureOptions capture)
     {
         var args = new List<string>
@@ -193,6 +211,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         return AppOptions.Parse(args.ToArray());
     }
 
+    /// <summary>
+    /// Loads an optional aircraft registry, falling back to automatic U.S. registration derivation when the file is absent.
+    /// </summary>
     private AircraftIdentityResolver LoadIdentityResolver(string? registryPath)
     {
         if (string.IsNullOrWhiteSpace(registryPath))

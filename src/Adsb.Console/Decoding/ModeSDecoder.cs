@@ -1,10 +1,21 @@
 namespace Adsb.Decoding;
 
+/// <summary>
+/// Interprets demodulated Mode S frames and extracts the ADS-B fields used by the console and server pipelines.
+/// </summary>
 public sealed class ModeSDecoder
 {
     private const string AircraftIdentificationCharacters =
         "#ABCDEFGHIJKLMNOPQRSTUVWXYZ##### ###############0123456789######";
 
+    /// <summary>
+    /// Decodes a demodulated frame into a normalized Mode S message, including ADS-B subtype fields when present.
+    /// </summary>
+    /// <param name="frame">The binary frame and receive metadata produced by the demodulator.</param>
+    /// <returns>
+    /// A message object that always contains frame metadata and contains ADS-B identity, position, or velocity
+    /// data when the downlink format and type code support it.
+    /// </returns>
     public ModeSMessage Decode(DemodulatedFrame frame)
     {
         var data = frame.Data.AsSpan();
@@ -59,6 +70,9 @@ public sealed class ModeSDecoder
         };
     }
 
+    /// <summary>
+    /// Extracts the eight 6-bit aircraft identification characters used for ADS-B callsigns and flight IDs.
+    /// </summary>
     private static ModeSMessage DecodeAircraftIdentification(ModeSMessage message, ReadOnlySpan<byte> data)
     {
         var chars = new char[8];
@@ -77,6 +91,10 @@ public sealed class ModeSDecoder
             category: (int)BitReader.GetBits(data, 37, 3));
     }
 
+    /// <summary>
+    /// Reads encoded CPR latitude/longitude plus either barometric altitude or GNSS height from an airborne
+    /// position message.
+    /// </summary>
     private static ModeSMessage DecodeAirbornePosition(
         ModeSMessage message,
         ReadOnlySpan<byte> data,
@@ -97,6 +115,9 @@ public sealed class ModeSDecoder
         return Clone(message, altitudeFeet: altitudeFeet, gnssHeightMeters: gnssHeightMeters, cpr: cpr);
     }
 
+    /// <summary>
+    /// Decodes ADS-B type code 19 velocity messages for both ground-vector and heading/airspeed subtypes.
+    /// </summary>
     private static ModeSMessage DecodeAirborneVelocity(ModeSMessage message, ReadOnlySpan<byte> data)
     {
         var subtype = (int)BitReader.GetBits(data, 37, 3);
@@ -178,6 +199,9 @@ public sealed class ModeSDecoder
                 AirspeedType: null));
     }
 
+    /// <summary>
+    /// Converts the 12-bit Gillham-like altitude field when the Q bit allows 25-foot resolution decoding.
+    /// </summary>
     private static int? DecodeBarometricAltitude(int altitudeCode)
     {
         if (altitudeCode == 0)
@@ -195,6 +219,9 @@ public sealed class ModeSDecoder
         return (n * 25) - 1000;
     }
 
+    /// <summary>
+    /// Extracts vertical rate and its source from a velocity message, returning null when the rate field is unset.
+    /// </summary>
     private static int? DecodeVerticalRate(ReadOnlySpan<byte> data, out string? source)
     {
         source = BitReader.GetBit(data, 67) == 0 ? "baro" : "gnss";
@@ -209,6 +236,9 @@ public sealed class ModeSDecoder
         return sign * (raw - 1) * 64;
     }
 
+    /// <summary>
+    /// Maps a Mode S downlink format number to a short human-readable protocol description.
+    /// </summary>
     private static string DescribeDownlinkFormat(int downlinkFormat) =>
         downlinkFormat switch
         {
@@ -224,6 +254,9 @@ public sealed class ModeSDecoder
             _ => "Mode S"
         };
 
+    /// <summary>
+    /// Maps an ADS-B extended squitter type code to the message family it represents.
+    /// </summary>
     private static string DescribeAdsbTypeCode(int typeCode) =>
         typeCode switch
         {
@@ -238,12 +271,18 @@ public sealed class ModeSDecoder
             _ => "ADS-B extended squitter"
         };
 
+    /// <summary>
+    /// Wraps headings and tracks into the 0 through 360 degree range used by telemetry consumers.
+    /// </summary>
     private static double NormalizeDegrees(double degrees)
     {
         var normalized = degrees % 360.0;
         return normalized < 0 ? normalized + 360.0 : normalized;
     }
 
+    /// <summary>
+    /// Creates a new immutable message while preserving base frame fields and replacing decoded ADS-B details.
+    /// </summary>
     private static ModeSMessage Clone(
         ModeSMessage source,
         string? callsign = null,

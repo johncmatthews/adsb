@@ -6,19 +6,31 @@ using System.Data.SQLite;
 
 namespace Adsb.Server.Services;
 
+/// <summary>
+/// SQLite replay store for telemetry events captured because they matched the server watchlist.
+/// </summary>
 public sealed class ReplayStore
 {
     private readonly string databasePath;
     private bool initialized;
     private readonly SemaphoreSlim initializeLock = new(1, 1);
 
+    /// <summary>
+    /// Creates a replay store for the configured SQLite database path.
+    /// </summary>
     public ReplayStore(IOptions<AdsbServerOptions> options)
     {
         databasePath = Path.GetFullPath(options.Value.Replay.DatabasePath);
     }
 
+    /// <summary>
+    /// Absolute SQLite database path used by the replay store.
+    /// </summary>
     public string DatabasePath => databasePath;
 
+    /// <summary>
+    /// Writes a matched telemetry event and the watchlist identifier that caused it to be retained.
+    /// </summary>
     public async Task RecordAsync(AircraftTelemetryEvent telemetry, WatchlistMatchDto match, CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -111,6 +123,9 @@ public sealed class ReplayStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Returns recent replay session summaries grouped by watchlist label and aircraft identifiers.
+    /// </summary>
     public async Task<IReadOnlyList<ReplaySessionDto>> GetSessionsAsync(CancellationToken cancellationToken)
     {
         await EnsureInitializedAsync(cancellationToken);
@@ -156,6 +171,12 @@ public sealed class ReplayStore
         return sessions;
     }
 
+    /// <summary>
+    /// Queries stored watchlist telemetry in chronological order using optional identity and UTC time filters.
+    /// </summary>
+    /// <remarks>
+    /// The query limit is clamped to protect the server from accidentally returning an unbounded replay result.
+    /// </remarks>
     public async Task<IReadOnlyList<AircraftTelemetryEvent>> QueryEventsAsync(
         ReplayQuery query,
         CancellationToken cancellationToken)
@@ -226,6 +247,9 @@ public sealed class ReplayStore
         return events;
     }
 
+    /// <summary>
+    /// Creates the replay database schema and indexes once, using a lock so concurrent requests share initialization.
+    /// </summary>
     public async Task EnsureInitializedAsync(CancellationToken cancellationToken = default)
     {
         if (initialized)
@@ -299,8 +323,14 @@ public sealed class ReplayStore
         }
     }
 
+    /// <summary>
+    /// Opens a new SQLite connection; callers own the connection lifetime for each operation.
+    /// </summary>
     private SQLiteConnection OpenConnection() => new($"Data Source={databasePath};Version=3;");
 
+    /// <summary>
+    /// Rehydrates one database row into the normalized telemetry contract returned by replay APIs.
+    /// </summary>
     private static AircraftTelemetryEvent ReadTelemetry(DbDataReader reader) =>
         new(
             DateTimeOffset.Parse(reader.GetString(0), CultureInfo.InvariantCulture),
@@ -326,6 +356,9 @@ public sealed class ReplayStore
             reader.GetString(20),
             reader.GetString(21));
 
+    /// <summary>
+    /// Executes a schema or SQLite pragma command during database initialization.
+    /// </summary>
     private static async Task ExecuteAsync(
         SQLiteConnection connection,
         string commandText,
@@ -336,6 +369,9 @@ public sealed class ReplayStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Adds an equality predicate and SQLite parameter when an optional replay filter value is present.
+    /// </summary>
     private static void AddFilter(
         SQLiteCommand command,
         List<string> where,
@@ -352,19 +388,34 @@ public sealed class ReplayStore
         Add(command, parameter, value.Trim().ToUpperInvariant());
     }
 
+    /// <summary>
+    /// Adds a SQLite parameter, translating null reference values into database NULL.
+    /// </summary>
     private static void Add(SQLiteCommand command, string name, object? value)
     {
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);
     }
 
+    /// <summary>
+    /// Reads a nullable text column from a data reader.
+    /// </summary>
     private static string? ReadString(DbDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
+    /// <summary>
+    /// Reads a nullable integer column from a data reader.
+    /// </summary>
     private static int? ReadInt(DbDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
 
+    /// <summary>
+    /// Reads a nullable floating-point column from a data reader.
+    /// </summary>
     private static double? ReadDouble(DbDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
 
+    /// <summary>
+    /// Converts grouped empty strings from SQL COALESCE expressions back to null values.
+    /// </summary>
     private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

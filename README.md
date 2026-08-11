@@ -175,6 +175,30 @@ The radar display is centered on the configured receiver location and plots airc
 }
 ```
 
+## Publish For Raspberry Pi
+
+Use `dotnet publish` with the runtime identifier that matches the Raspberry Pi operating system architecture.
+
+For a Raspberry Pi 3B+ running 64-bit Raspberry Pi OS:
+
+```sh
+dotnet publish src/Adsb.Server/Adsb.Server.csproj -c Release -r linux-arm64 --self-contained true -o publish/pi/server
+dotnet publish src/Adsb.Client/Adsb.Client.csproj -c Release -r linux-arm64 --self-contained true -o publish/pi/client
+```
+
+For a Raspberry Pi 3B+ running 32-bit Raspberry Pi OS:
+
+```sh
+dotnet publish src/Adsb.Server/Adsb.Server.csproj -c Release -r linux-arm --self-contained true -o publish/pi/server
+dotnet publish src/Adsb.Client/Adsb.Client.csproj -c Release -r linux-arm --self-contained true -o publish/pi/client
+```
+
+On the Pi, `uname -m` usually reports `aarch64` for a 64-bit OS and `armv7l` for a 32-bit OS. The publish output includes the .NET runtime when `--self-contained true` is used, but it does not include the native RTL-SDR driver. Install it on the Pi before running the server:
+
+```sh
+sudo apt install rtl-sdr librtlsdr0
+```
+
 Example output:
 
 ```text

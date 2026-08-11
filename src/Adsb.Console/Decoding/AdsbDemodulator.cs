@@ -1,5 +1,9 @@
 namespace Adsb.Decoding;
 
+/// <summary>
+/// Converts raw 2 Msps RTL-SDR I/Q sample buffers into candidate Mode S frames by detecting
+/// ADS-B preambles and pulse-position encoded bits.
+/// </summary>
 public sealed class AdsbDemodulator
 {
     private const int SamplesPerSecond = 2_000_000;
@@ -10,6 +14,13 @@ public sealed class AdsbDemodulator
 
     private int[] previousMagnitudes = Array.Empty<int>();
 
+    /// <summary>
+    /// Creates a demodulator for the fixed sample rate used by the current preamble and bit timing logic.
+    /// </summary>
+    /// <param name="sampleRate">The RTL-SDR sample rate in samples per second.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the sample rate does not match the 2 Msps assumptions used by this MVP demodulator.
+    /// </exception>
     public AdsbDemodulator(uint sampleRate)
     {
         if (sampleRate != SamplesPerSecond)
@@ -18,6 +29,14 @@ public sealed class AdsbDemodulator
         }
     }
 
+    /// <summary>
+    /// Scans a block of unsigned 8-bit interleaved I/Q samples and returns any complete Mode S frames found in it.
+    /// </summary>
+    /// <param name="iqBytes">Interleaved I/Q bytes from librtlsdr, with one unsigned byte per I and Q sample.</param>
+    /// <param name="receivedAt">The timestamp assigned to frames recovered from this sample block.</param>
+    /// <returns>
+    /// Demodulated frames whose preamble and bit confidence passed the lightweight validation thresholds.
+    /// </returns>
     public IReadOnlyList<DemodulatedFrame> Process(ReadOnlySpan<byte> iqBytes, DateTimeOffset receivedAt)
     {
         var sampleCount = iqBytes.Length / 2;
@@ -70,6 +89,10 @@ public sealed class AdsbDemodulator
         return frames;
     }
 
+    /// <summary>
+    /// Converts unsigned RTL-SDR I/Q pairs into squared magnitudes so preamble detection can work
+    /// without carrying phase information.
+    /// </summary>
     private static void ConvertToMagnitudes(ReadOnlySpan<byte> iqBytes, Span<int> magnitudes)
     {
         for (var i = 0; i < magnitudes.Length; i++)
@@ -81,6 +104,10 @@ public sealed class AdsbDemodulator
         }
     }
 
+    /// <summary>
+    /// Checks for the Mode S preamble pulse pattern and estimates the signal strength and per-bit
+    /// confidence threshold for the following payload.
+    /// </summary>
     private static bool LooksLikePreamble(
         ReadOnlySpan<int> magnitudes,
         int start,
@@ -127,6 +154,10 @@ public sealed class AdsbDemodulator
                p3 > magnitudes[start + 10];
     }
 
+    /// <summary>
+    /// Reads the first payload byte after a detected preamble so the downlink format can determine
+    /// whether the frame is 56 or 112 bits long.
+    /// </summary>
     private static byte ExtractFirstByte(ReadOnlySpan<int> magnitudes, int dataStart)
     {
         byte value = 0;
@@ -141,6 +172,9 @@ public sealed class AdsbDemodulator
         return value;
     }
 
+    /// <summary>
+    /// Builds a Mode S frame from pulse magnitudes and rejects frames with too many low-confidence bits.
+    /// </summary>
     private static DemodulatedFrame? ExtractFrame(
         ReadOnlySpan<int> magnitudes,
         int dataStart,
@@ -174,6 +208,9 @@ public sealed class AdsbDemodulator
         return new DemodulatedFrame(bytes, bitLength, signalDb, receivedAt);
     }
 
+    /// <summary>
+    /// Decodes one pulse-position bit by comparing the high-energy half of a two-sample symbol.
+    /// </summary>
     private static int ExtractBit(ReadOnlySpan<int> magnitudes, int dataStart, int bit, out int confidence)
     {
         var firstHalf = magnitudes[dataStart + (bit * 2)];
@@ -182,6 +219,9 @@ public sealed class AdsbDemodulator
         return firstHalf > secondHalf ? 1 : 0;
     }
 
+    /// <summary>
+    /// Identifies downlink formats whose Mode S frames use the 112-bit long frame layout.
+    /// </summary>
     private static bool IsLongFrame(int downlinkFormat) =>
         downlinkFormat is 16 or 17 or 18 or 19 or 20 or 21 or 24;
 }

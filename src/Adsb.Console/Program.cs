@@ -6,8 +6,16 @@ using Adsb.Tracking;
 
 return await ProgramEntry.RunAsync(args);
 
+/// <summary>
+/// Console application entry point that wires the RTL-SDR device, demodulator, decoder, tracker, and optional recorder.
+/// </summary>
 internal static class ProgramEntry
 {
+    /// <summary>
+    /// Runs the console receiver until cancellation, printing one formatted line per decoded message that passes filters.
+    /// </summary>
+    /// <param name="args">Command-line arguments supplied to the console application.</param>
+    /// <returns>Process exit code indicating success, usage error, or runtime failure.</returns>
     public static async Task<int> RunAsync(string[] args)
     {
         AppOptions options;
@@ -120,6 +128,9 @@ internal static class ProgramEntry
         }
     }
 
+    /// <summary>
+    /// Applies CLI filtering rules for invalid CRC frames and non-ADS-B Mode S frames.
+    /// </summary>
     private static bool ShouldPrint(ModeSMessage message, AppOptions options)
     {
         if (!options.IncludeInvalidFrames && !message.CrcOk)
@@ -135,6 +146,9 @@ internal static class ProgramEntry
         return true;
     }
 
+    /// <summary>
+    /// Prints the RTL-SDR devices exposed by the native driver so the user can choose a device index.
+    /// </summary>
     private static void ListDevices()
     {
         var devices = RtlSdrDevice.ListDevices();

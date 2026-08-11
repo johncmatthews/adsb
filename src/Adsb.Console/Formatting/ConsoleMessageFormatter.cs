@@ -3,8 +3,17 @@ using Adsb.Decoding;
 
 namespace Adsb.Formatting;
 
+/// <summary>
+/// Produces compact single-line console output from decoded Mode S messages and accumulated aircraft state.
+/// </summary>
 public static class ConsoleMessageFormatter
 {
+    /// <summary>
+    /// Formats a message as a readable telemetry line, using snapshot values to fill details that arrive in earlier frames.
+    /// </summary>
+    /// <param name="message">The decoded message being printed.</param>
+    /// <param name="snapshot">Latest known aircraft state for the message ICAO, if available.</param>
+    /// <param name="includeRaw">Whether to append the raw hexadecimal Mode S frame.</param>
     public static string Format(ModeSMessage message, AircraftSnapshot? snapshot, bool includeRaw)
     {
         var parts = new List<string>
@@ -51,6 +60,9 @@ public static class ConsoleMessageFormatter
         return string.Join(" ", parts);
     }
 
+    /// <summary>
+    /// Adds tail, flight, and callsign fields while avoiding duplicate labels when they resolve to the same identifier.
+    /// </summary>
     private static void AddIdentity(List<string> parts, ModeSMessage message, AircraftSnapshot? snapshot)
     {
         var callsign = message.Callsign ?? snapshot?.Callsign;
@@ -75,6 +87,9 @@ public static class ConsoleMessageFormatter
         }
     }
 
+    /// <summary>
+    /// Adds the best altitude values available from the current message or previous state.
+    /// </summary>
     private static void AddAltitude(List<string> parts, ModeSMessage message, AircraftSnapshot? snapshot)
     {
         var altitudeFeet = message.AltitudeFeet ?? snapshot?.AltitudeFeet;
@@ -90,6 +105,9 @@ public static class ConsoleMessageFormatter
         }
     }
 
+    /// <summary>
+    /// Adds latitude and longitude only after CPR decoding has produced a complete aircraft position.
+    /// </summary>
     private static void AddPosition(List<string> parts, AircraftSnapshot? snapshot)
     {
         if (snapshot?.Latitude is null || snapshot.Longitude is null)
@@ -101,6 +119,9 @@ public static class ConsoleMessageFormatter
         parts.Add($"lon={snapshot.Longitude.Value:F5}");
     }
 
+    /// <summary>
+    /// Adds speed, track, heading, airspeed, and vertical rate fields from the newest velocity data available.
+    /// </summary>
     private static void AddVelocity(List<string> parts, ModeSMessage message, AircraftSnapshot? snapshot)
     {
         var velocity = message.Velocity;

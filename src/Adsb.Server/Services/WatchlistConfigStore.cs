@@ -5,6 +5,9 @@ using Microsoft.Extensions.Options;
 
 namespace Adsb.Server.Services;
 
+/// <summary>
+/// Thread-safe JSON-backed watchlist store used by the server REST API and live capture matcher.
+/// </summary>
 public sealed class WatchlistConfigStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -12,13 +15,22 @@ public sealed class WatchlistConfigStore
     private readonly string path;
     private List<WatchlistAircraftDto>? entries;
 
+    /// <summary>
+    /// Creates a store bound to the configured watchlist path.
+    /// </summary>
     public WatchlistConfigStore(IOptions<AdsbServerOptions> options)
     {
         path = System.IO.Path.GetFullPath(options.Value.Watchlist.Path);
     }
 
+    /// <summary>
+    /// Absolute path to the watchlist JSON file managed by this store.
+    /// </summary>
     public string Path => path;
 
+    /// <summary>
+    /// Returns all configured aircraft entries after lazy-loading the backing JSON file.
+    /// </summary>
     public IReadOnlyList<WatchlistAircraftDto> GetAll()
     {
         lock (gate)
@@ -28,6 +40,9 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Adds a normalized watchlist aircraft entry and persists the updated JSON document.
+    /// </summary>
     public WatchlistAircraftDto Add(UpsertWatchlistAircraftRequest request)
     {
         lock (gate)
@@ -40,6 +55,10 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Replaces an existing watchlist entry while preserving its stable identifier.
+    /// </summary>
+    /// <returns>True when the entry existed and was updated.</returns>
     public bool TryUpdate(string id, UpsertWatchlistAircraftRequest request, out WatchlistAircraftDto item)
     {
         lock (gate)
@@ -59,6 +78,9 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Deletes a watchlist entry by ID and saves the file only when an entry was removed.
+    /// </summary>
     public bool Delete(string id)
     {
         lock (gate)
@@ -74,6 +96,9 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Attempts to match telemetry against the current watchlist using ICAO, tail number, flight number, then callsign.
+    /// </summary>
     public bool TryMatch(AircraftTelemetryEvent telemetry, out WatchlistMatchDto match)
     {
         lock (gate)
@@ -111,6 +136,9 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Loads the watchlist JSON once on first use, treating a missing file as an empty watchlist.
+    /// </summary>
     private void EnsureLoaded()
     {
         if (entries is not null)
@@ -128,6 +156,9 @@ public sealed class WatchlistConfigStore
         entries = string.IsNullOrWhiteSpace(text) ? [] : LoadJson(text);
     }
 
+    /// <summary>
+    /// Writes the current watchlist entries as an object with an aircraft array, creating the directory if needed.
+    /// </summary>
     private void Save()
     {
         var directory = System.IO.Path.GetDirectoryName(path);
@@ -140,6 +171,9 @@ public sealed class WatchlistConfigStore
         File.WriteAllText(path, JsonSerializer.Serialize(document, JsonOptions));
     }
 
+    /// <summary>
+    /// Parses a watchlist JSON document, accepting either a root array or an object with an aircraft array.
+    /// </summary>
     private static List<WatchlistAircraftDto> LoadJson(string json)
     {
         using var document = JsonDocument.Parse(json);
@@ -171,6 +205,9 @@ public sealed class WatchlistConfigStore
         return entries;
     }
 
+    /// <summary>
+    /// Normalizes incoming REST request values and ensures the entry contains at least one usable identifier.
+    /// </summary>
     private static WatchlistAircraftDto Normalize(UpsertWatchlistAircraftRequest request, string id)
     {
         var item = new WatchlistAircraftDto(
@@ -189,12 +226,18 @@ public sealed class WatchlistConfigStore
         return item;
     }
 
+    /// <summary>
+    /// Checks whether a watchlist DTO has no configured identifiers and should be rejected or ignored.
+    /// </summary>
     private static bool IsEmpty(WatchlistAircraftDto item) =>
         item.Icaos.Count == 0 &&
         item.TailNumbers.Count == 0 &&
         item.FlightNumbers.Count == 0 &&
         item.Callsigns.Count == 0;
 
+    /// <summary>
+    /// Normalizes, de-duplicates, and removes empty identifier values from a request collection.
+    /// </summary>
     private static IReadOnlyList<string> NormalizeValues(
         IReadOnlyList<string>? values,
         Func<string?, string?> normalize) =>
@@ -205,6 +248,9 @@ public sealed class WatchlistConfigStore
             .Select(value => value!)
             .ToArray() ?? [];
 
+    /// <summary>
+    /// Reads one or more string properties from a JSON entry, accepting either scalar strings or string arrays.
+    /// </summary>
     private static IReadOnlyList<string> GetStrings(JsonElement item, params string[] propertyNames)
     {
         var values = new List<string>();
@@ -234,6 +280,9 @@ public sealed class WatchlistConfigStore
         return values;
     }
 
+    /// <summary>
+    /// Reads the first matching scalar string property from a JSON entry.
+    /// </summary>
     private static string? GetString(JsonElement item, params string[] propertyNames)
     {
         foreach (var name in propertyNames)
@@ -247,6 +296,9 @@ public sealed class WatchlistConfigStore
         return null;
     }
 
+    /// <summary>
+    /// Adds a non-empty JSON value to a collection before normalization removes duplicates.
+    /// </summary>
     private static void AddIfPresent(List<string> values, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
@@ -255,6 +307,9 @@ public sealed class WatchlistConfigStore
         }
     }
 
+    /// <summary>
+    /// Compares a normalized observed telemetry identifier against a configured identifier collection.
+    /// </summary>
     private static bool ContainsNormalized(
         IReadOnlyList<string> configuredValues,
         string? observedValue,
@@ -264,6 +319,9 @@ public sealed class WatchlistConfigStore
         return observed is not null && configuredValues.Any(value => normalize(value) == observed);
     }
 
+    /// <summary>
+    /// Normalizes ICAO addresses to six uppercase hexadecimal characters, accepting an optional 0x prefix.
+    /// </summary>
     private static string? NormalizeIcao(string? value)
     {
         var normalized = value?.Trim().ToUpperInvariant();
@@ -282,11 +340,17 @@ public sealed class WatchlistConfigStore
             : null;
     }
 
+    /// <summary>
+    /// Normalizes tail, flight, and callsign identifiers for case-insensitive matching.
+    /// </summary>
     private static string? NormalizeIdentifier(string? value)
     {
         var normalized = value?.Trim().ToUpperInvariant().Replace(" ", string.Empty, StringComparison.Ordinal);
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
+    /// <summary>
+    /// Serialized watchlist file shape used when the server writes the JSON document.
+    /// </summary>
     private sealed record WatchlistDocument(IReadOnlyList<WatchlistAircraftDto> Aircraft);
 }

@@ -3,8 +3,14 @@ using Adsb.Server.Contracts;
 
 namespace Adsb.Server.Services;
 
+/// <summary>
+/// Converts decoder and tracker output into the server telemetry contract used by SignalR, REST, and replay storage.
+/// </summary>
 public static class AircraftTelemetryMapper
 {
+    /// <summary>
+    /// Maps the current decoded frame plus accumulated aircraft state into one normalized telemetry event.
+    /// </summary>
     public static AircraftTelemetryEvent Map(ModeSMessage message, AircraftSnapshot? snapshot)
     {
         var velocity = message.Velocity;
