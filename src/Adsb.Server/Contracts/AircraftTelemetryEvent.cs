@@ -70,8 +70,11 @@ public sealed record WatchlistMatchEvent(
 /// <param name="StartedAtUtc">UTC time when the server process created the status tracker.</param>
 /// <param name="CaptureEnabled">Whether RTL-SDR capture is enabled in configuration.</param>
 /// <param name="DeviceConnected">Whether the capture service currently has an open RTL-SDR device.</param>
+/// <param name="TrafficLoggingEnabled">Whether all-aircraft telemetry archival is enabled.</param>
+/// <param name="WatchlistEnabled">Whether watchlist matching and replay recording are enabled.</param>
 /// <param name="FramesDecoded">Number of frames decoded from the sample stream.</param>
 /// <param name="EventsPublished">Number of telemetry events published after filtering.</param>
+/// <param name="TrafficEventsRecorded">Number of all-aircraft telemetry events committed to the archive.</param>
 /// <param name="WatchlistEventsRecorded">Number of matched watchlist events written to replay storage.</param>
 /// <param name="LastEventAtUtc">Receive time of the latest published telemetry event.</param>
 /// <param name="LastError">Most recent capture error message, if any.</param>
@@ -79,8 +82,11 @@ public sealed record ServerStatusDto(
     DateTimeOffset StartedAtUtc,
     bool CaptureEnabled,
     bool DeviceConnected,
+    bool TrafficLoggingEnabled,
+    bool WatchlistEnabled,
     long FramesDecoded,
     long EventsPublished,
+    long TrafficEventsRecorded,
     long WatchlistEventsRecorded,
     DateTimeOffset? LastEventAtUtc,
     string? LastError);

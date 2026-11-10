@@ -10,9 +10,12 @@ public sealed class CaptureStatusService
     private readonly DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
     private long framesDecoded;
     private long eventsPublished;
+    private long trafficEventsRecorded;
     private long watchlistEventsRecorded;
     private bool captureEnabled;
     private bool deviceConnected;
+    private bool trafficLoggingEnabled;
+    private bool watchlistEnabled;
     private DateTimeOffset? lastEventAtUtc;
     private string? lastError;
 
@@ -24,6 +27,14 @@ public sealed class CaptureStatusService
     /// Records whether the capture service currently has an open RTL-SDR device.
     /// </summary>
     public void SetDeviceConnected(bool connected) => deviceConnected = connected;
+    /// <summary>
+    /// Records whether all-aircraft telemetry logging is enabled.
+    /// </summary>
+    public void SetTrafficLoggingEnabled(bool enabled) => trafficLoggingEnabled = enabled;
+    /// <summary>
+    /// Records whether watchlist matching and replay recording are enabled.
+    /// </summary>
+    public void SetWatchlistEnabled(bool enabled) => watchlistEnabled = enabled;
 
     /// <summary>
     /// Increments the count of frames that passed demodulation and were decoded into Mode S messages.
@@ -40,6 +51,14 @@ public sealed class CaptureStatusService
     {
         Interlocked.Increment(ref eventsPublished);
         lastEventAtUtc = receivedAtUtc;
+    }
+
+    /// <summary>
+    /// Adds the number of all-aircraft telemetry events committed to the archive.
+    /// </summary>
+    public void RecordTrafficEvents(int count)
+    {
+        Interlocked.Add(ref trafficEventsRecorded, count);
     }
 
     /// <summary>
@@ -67,8 +86,11 @@ public sealed class CaptureStatusService
             startedAtUtc,
             captureEnabled,
             deviceConnected,
+            trafficLoggingEnabled,
+            watchlistEnabled,
             Interlocked.Read(ref framesDecoded),
             Interlocked.Read(ref eventsPublished),
+            Interlocked.Read(ref trafficEventsRecorded),
             Interlocked.Read(ref watchlistEventsRecorded),
             lastEventAtUtc,
             lastError);
