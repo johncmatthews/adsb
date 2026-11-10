@@ -16,6 +16,8 @@ builder.Services.AddSingleton<TelemetryEventBus>();
 builder.Services.AddSingleton<WatchlistConfigStore>();
 builder.Services.AddSingleton<ReplayStore>();
 builder.Services.AddSingleton<CaptureStatusService>();
+builder.Services.AddSingleton<TrafficLogStore>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<TrafficLogStore>());
 builder.Services.AddHostedService<AdsbCaptureHostedService>();
 builder.Services.AddHostedService<CompatibilityTcpServerHostedService>();
 
@@ -78,6 +80,27 @@ replayApi.MapGet(
         CancellationToken cancellationToken) =>
         await replayStore.QueryEventsAsync(
             new ReplayQuery(icao, tailNumber, flightNumber, callsign, fromUtc, toUtc, limit ?? 1000),
+            cancellationToken));
+
+var trafficApi = app.MapGroup("/api/traffic");
+trafficApi.MapGet(
+    "/stats",
+    async (TrafficLogStore trafficLogStore, CancellationToken cancellationToken) =>
+        await trafficLogStore.GetStatsAsync(cancellationToken));
+trafficApi.MapGet(
+    "/events",
+    async (
+        string? icao,
+        string? tailNumber,
+        string? flightNumber,
+        string? callsign,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int? limit,
+        TrafficLogStore trafficLogStore,
+        CancellationToken cancellationToken) =>
+        await trafficLogStore.QueryEventsAsync(
+            new TrafficQuery(icao, tailNumber, flightNumber, callsign, fromUtc, toUtc, limit ?? 1000),
             cancellationToken));
 
 var compatApi = app.MapGroup("/compat");

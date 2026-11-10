@@ -86,6 +86,7 @@ Capture is disabled by default so the server can start without an RTL-SDR attach
 dotnet run --project src/Adsb.Server -- \
   --urls http://127.0.0.1:5087 \
   --Adsb:Capture:Enabled true \
+  --Adsb:Watchlist:Enabled true \
   --Adsb:Watchlist:Path watchlist.json \
   --Adsb:Replay:DatabasePath watchlist.sqlite
 ```
@@ -111,6 +112,8 @@ REST endpoints:
 - `DELETE /api/watchlist/{id}`
 - `GET /api/replay/sessions`
 - `GET /api/replay/events?icao=4840D6&limit=1000`
+- `GET /api/traffic/stats`
+- `GET /api/traffic/events?icao=4840D6&fromUtc=2026-11-01T00:00:00Z&limit=1000`
 
 Compatibility streams:
 
@@ -132,6 +135,53 @@ Optional TCP compatibility outputs can be enabled with config values:
 }
 ```
 
+## All-Traffic Recording
+
+The server can archive every telemetry event that passes the configured capture filters, regardless of whether the aircraft is on the watchlist. This feature is disabled by default because a continuously running receiver can produce a large database.
+
+Enable it from the command line:
+
+```sh
+dotnet run --project src/Adsb.Server -- \
+  --urls http://127.0.0.1:5087 \
+  --Adsb:Capture:Enabled true \
+  --Adsb:TrafficLogging:Enabled true \
+  --Adsb:TrafficLogging:DatabasePath adsb-traffic.sqlite
+```
+
+Or configure it in `src/Adsb.Server/appsettings.json`:
+
+```json
+{
+  "Adsb": {
+    "TrafficLogging": {
+      "Enabled": true,
+      "DatabasePath": "adsb-traffic.sqlite"
+    },
+    "Watchlist": {
+      "Enabled": true,
+      "Path": "watchlist.json"
+    },
+    "Replay": {
+      "DatabasePath": "adsb-watchlist.sqlite"
+    }
+  }
+}
+```
+
+The two persistence features are independent:
+
+| Traffic logging | Watchlist | Result |
+| --- | --- | --- |
+| Off | Off | Live telemetry only; nothing is persisted. |
+| On | Off | All published telemetry is written to `aircraft_telemetry`. |
+| Off | On | Only watchlist matches are written to `watchlist_telemetry`. |
+| On | On | All telemetry is archived, and watchlist matches are also retained in the separate replay database. |
+
+The all-traffic database stores UTC timestamp, ICAO, tail number, flight number, callsign, position, altitude, speed, heading/track, vertical rate, signal strength, CRC status, and the raw Mode S frame. Writes are buffered and committed in batches so SQLite activity does not normally delay radio processing. If the buffer fills, the capture pipeline applies backpressure rather than discarding archive events.
+
+Use `GET /api/traffic/stats` to inspect archive coverage and `GET /api/traffic/events` to query by ICAO, tail number, flight number, callsign, or UTC time range. Query results are limited to 100,000 events per request. There is currently no automatic retention or database-size limit, so storage usage should be monitored on long-running installations.
+
 ## Web Client
 
 The real-time dashboard lives in `src/Adsb.Client` and connects to the SignalR server.
@@ -142,6 +192,7 @@ Run the ADS-B server first:
 dotnet run --project src/Adsb.Server -- \
   --urls http://127.0.0.1:5087 \
   --Adsb:Capture:Enabled true \
+  --Adsb:Watchlist:Enabled true \
   --Adsb:Watchlist:Path watchlist.json \
   --Adsb:Replay:DatabasePath watchlist.sqlite
 ```

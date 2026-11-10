@@ -18,6 +18,7 @@ public sealed class AdsbCaptureHostedService : BackgroundService
     private readonly TelemetryEventBus eventBus;
     private readonly WatchlistConfigStore watchlist;
     private readonly ReplayStore replayStore;
+    private readonly TrafficLogStore trafficLogStore;
     private readonly CaptureStatusService status;
     private readonly IHubContext<AdsbHub> hubContext;
     private readonly ILogger<AdsbCaptureHostedService> logger;
@@ -31,6 +32,7 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         TelemetryEventBus eventBus,
         WatchlistConfigStore watchlist,
         ReplayStore replayStore,
+        TrafficLogStore trafficLogStore,
         CaptureStatusService status,
         IHubContext<AdsbHub> hubContext,
         ILogger<AdsbCaptureHostedService> logger)
@@ -40,6 +42,7 @@ public sealed class AdsbCaptureHostedService : BackgroundService
         this.eventBus = eventBus;
         this.watchlist = watchlist;
         this.replayStore = replayStore;
+        this.trafficLogStore = trafficLogStore;
         this.status = status;
         this.hubContext = hubContext;
         this.logger = logger;
@@ -52,7 +55,12 @@ public sealed class AdsbCaptureHostedService : BackgroundService
     {
         var serverOptions = options.Value;
         status.SetCaptureEnabled(serverOptions.Capture.Enabled);
-        await replayStore.EnsureInitializedAsync(stoppingToken);
+        status.SetTrafficLoggingEnabled(serverOptions.TrafficLogging.Enabled);
+        status.SetWatchlistEnabled(serverOptions.Watchlist.Enabled);
+        if (serverOptions.Watchlist.Enabled)
+        {
+            await replayStore.EnsureInitializedAsync(stoppingToken);
+        }
 
         if (!serverOptions.Capture.Enabled)
         {
@@ -76,7 +84,7 @@ public sealed class AdsbCaptureHostedService : BackgroundService
     }
 
     /// <summary>
-    /// Opens the RTL-SDR device and runs the demodulate, decode, track, publish, SignalR, and watchlist replay pipeline.
+    /// Opens the RTL-SDR device and runs the decode, publish, all-traffic archive, and watchlist replay pipeline.
     /// </summary>
     private async Task RunCaptureAsync(AdsbServerOptions serverOptions, CancellationToken stoppingToken)
     {
@@ -120,7 +128,9 @@ public sealed class AdsbCaptureHostedService : BackgroundService
                     status.RecordPublishedEvent(telemetry.ReceivedAtUtc);
                     await hubContext.Clients.All.SendAsync("aircraftUpdated", telemetry, token);
 
-                    if (watchlist.TryMatch(telemetry, out var match))
+                    await trafficLogStore.EnqueueAsync(telemetry, token);
+
+                    if (serverOptions.Watchlist.Enabled && watchlist.TryMatch(telemetry, out var match))
                     {
                         await replayStore.RecordAsync(telemetry, match, token);
                         status.RecordWatchlistEvent();

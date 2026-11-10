@@ -4,6 +4,7 @@ using Adsb.Server.Compatibility;
 using Adsb.Server.Contracts;
 using Adsb.Server.Services;
 using Adsb.Tracking;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Data.SQLite;
 
@@ -21,6 +22,8 @@ tests.WatchlistMatchesJsonConfigByTailNumber();
 tests.RecordsMatchedTelemetryToSqlite();
 tests.ServerWatchlistCrudMatchesTelemetry();
 tests.ServerReplayStoreRecordsAndQueriesEvents();
+tests.TrafficLogStoreRecordsAndQueriesAllTelemetry();
+tests.DisabledTrafficLogStoreDoesNotCreateAnArchive();
 tests.ServerSnapshotStoreFindsAircraftByAnyIdentifier();
 tests.CompatibilityFormattersProduceOutput();
 
@@ -336,6 +339,84 @@ internal sealed class ProtocolTests
     }
 
     /// <summary>
+    /// Verifies all-aircraft telemetry is batched into SQLite and can be filtered and summarized for analysis.
+    /// </summary>
+    public void TrafficLogStoreRecordsAndQueriesAllTelemetry()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var databasePath = Path.Combine(directory, "all-traffic.sqlite");
+            var status = new CaptureStatusService();
+            var store = CreateTrafficLogStore(databasePath, enabled: true, status);
+            store.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            var first = SampleTelemetry();
+            var second = first with
+            {
+                ReceivedAtUtc = first.ReceivedAtUtc.AddSeconds(5),
+                Icao = "A58A20",
+                TailNumber = "N456TS",
+                FlightNumber = null,
+                Callsign = "N456TS"
+            };
+
+            store.EnqueueAsync(first, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            store.EnqueueAsync(second, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            store.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            var events = store.QueryEventsAsync(
+                new TrafficQuery(
+                    Icao: "A58A20",
+                    TailNumber: null,
+                    FlightNumber: null,
+                    Callsign: null,
+                    FromUtc: null,
+                    ToUtc: null,
+                    Limit: 10),
+                CancellationToken.None).GetAwaiter().GetResult();
+            var stats = store.GetStatsAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            AssertEqual(1, events.Count, "traffic archive filtered event count");
+            AssertEqual("N456TS", events[0].TailNumber, "traffic archive filtered tail");
+            AssertEqual(2L, stats.EventCount, "traffic archive event count");
+            AssertEqual(2L, stats.DistinctAircraftCount, "traffic archive aircraft count");
+            AssertEqual(first.ReceivedAtUtc, stats.FirstEventAtUtc, "traffic archive first timestamp");
+            AssertEqual(second.ReceivedAtUtc, stats.LastEventAtUtc, "traffic archive last timestamp");
+            AssertEqual(2L, status.GetStatus().TrafficEventsRecorded, "traffic archive status count");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// Verifies disabling all-traffic logging prevents writes without changing the independent watchlist default.
+    /// </summary>
+    public void DisabledTrafficLogStoreDoesNotCreateAnArchive()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var databasePath = Path.Combine(directory, "disabled-traffic.sqlite");
+            var store = CreateTrafficLogStore(databasePath, enabled: false, new CaptureStatusService());
+            var queued = store.EnqueueAsync(SampleTelemetry(), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+
+            AssertEqual(false, queued, "disabled traffic archive queue result");
+            AssertEqual(false, File.Exists(databasePath), "disabled traffic archive database");
+            AssertEqual(true, new WatchlistOptions().Enabled, "watchlist remains enabled by default");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// Verifies latest aircraft snapshots can be retrieved by ICAO, tail number, or flight number.
     /// </summary>
     public void ServerSnapshotStoreFindsAircraftByAnyIdentifier()
@@ -400,6 +481,26 @@ internal sealed class ProtocolTests
     /// </summary>
     private static ReplayStore CreateReplayStore(string path) =>
         new(Options.Create(new AdsbServerOptions { Replay = new ReplayOptions { DatabasePath = path } }));
+
+    /// <summary>
+    /// Creates an all-traffic archive store configured for a test-specific SQLite database path.
+    /// </summary>
+    private static TrafficLogStore CreateTrafficLogStore(
+        string path,
+        bool enabled,
+        CaptureStatusService status) =>
+        new(
+            Options.Create(
+                new AdsbServerOptions
+                {
+                    TrafficLogging = new TrafficLoggingOptions
+                    {
+                        Enabled = enabled,
+                        DatabasePath = path
+                    }
+                }),
+            status,
+            NullLogger<TrafficLogStore>.Instance);
 
     /// <summary>
     /// Provides a representative decoded aircraft telemetry event shared by server and compatibility tests.

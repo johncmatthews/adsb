@@ -1,7 +1,7 @@
 namespace Adsb.Server.Services;
 
 /// <summary>
-/// Root configuration section for the ADS-B server, covering capture, identity, replay, and compatibility outputs.
+/// Root configuration section for the ADS-B server, covering capture, persistence, identity, and compatibility outputs.
 /// </summary>
 public sealed class AdsbServerOptions
 {
@@ -13,6 +13,8 @@ public sealed class AdsbServerOptions
     public WatchlistOptions Watchlist { get; set; } = new();
     /// <summary>Replay database settings.</summary>
     public ReplayOptions Replay { get; set; } = new();
+    /// <summary>All-aircraft telemetry logging settings.</summary>
+    public TrafficLoggingOptions TrafficLogging { get; set; } = new();
     /// <summary>Optional SBS, Beast, and JSON lines TCP output settings.</summary>
     public CompatibilityOptions Compatibility { get; set; } = new();
 }
@@ -64,6 +66,8 @@ public sealed class IdentityOptions
 /// </summary>
 public sealed class WatchlistOptions
 {
+    /// <summary>Whether matched aircraft telemetry should be recorded and announced as watchlist events.</summary>
+    public bool Enabled { get; set; } = true;
     /// <summary>Path to the JSON watchlist file read and written by the REST API.</summary>
     public string Path { get; set; } = "watchlist.json";
 }
@@ -75,6 +79,17 @@ public sealed class ReplayOptions
 {
     /// <summary>SQLite database path used for matched watchlist telemetry.</summary>
     public string DatabasePath { get; set; } = "adsb-watchlist.sqlite";
+}
+
+/// <summary>
+/// Configuration for archiving every published aircraft telemetry event for later analysis.
+/// </summary>
+public sealed class TrafficLoggingOptions
+{
+    /// <summary>Whether all qualifying aircraft telemetry should be persisted.</summary>
+    public bool Enabled { get; set; }
+    /// <summary>SQLite database path used for the all-traffic telemetry archive.</summary>
+    public string DatabasePath { get; set; } = "adsb-traffic.sqlite";
 }
 
 /// <summary>

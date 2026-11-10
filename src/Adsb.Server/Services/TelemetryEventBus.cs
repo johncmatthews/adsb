@@ -16,7 +16,8 @@ public sealed class TelemetryEventBus
     /// </summary>
     /// <remarks>
     /// Subscriptions drop the oldest buffered events under backpressure so slow realtime clients cannot stall capture.
-    /// Durable watchlist replay uses <see cref="ReplayStore"/> instead.
+    /// Durable history uses <see cref="ReplayStore"/> for watchlist matches and <see cref="TrafficLogStore"/>
+    /// for the optional all-aircraft archive.
     /// </remarks>
     public ChannelReader<AircraftTelemetryEvent> Subscribe(CancellationToken cancellationToken)
     {
